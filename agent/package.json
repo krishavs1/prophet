@@ -2,10 +2,21 @@
   "name": "@prophet/agent",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
-    "dev": "echo 'Agent dev server - to be implemented'",
-    "build": "echo 'Agent build - to be implemented'",
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/src/index.js",
     "test": "echo 'Agent tests - to be implemented'",
-    "lint": "echo 'Agent lint - to be implemented'"
+    "lint": "tsc --noEmit"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.0.0"
   }
 }
