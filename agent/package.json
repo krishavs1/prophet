@@ -1,0 +1,10 @@
+{
+  "name": "agent",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "tsx watch index.ts",
+    "build": "tsc",
+    "lint": "eslint ."
+  }
+}

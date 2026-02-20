@@ -1,0 +1,22 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build outputs
+.next/
+dist/
+out/
+.turbo/
+
+# Foundry
+cache/
+broadcast/
+out/
+
+# Env
+.env
+.env*.local
+
+# IDE / OS
+.DS_Store
+*.log

@@ -8,7 +8,7 @@ This project is an "Autonomous DeFAI Sentinel" built for the 0G Compute Hackatho
 ---
 
 ## Phase 1: Environment Setup & Scaffold
-- [ ] Initialize a standard monorepo setup (e.g., Turborepo or just separate `frontend` and `contracts` folders).
+- [x] Initialize a standard monorepo setup (e.g., Turborepo or just separate `frontend` and `contracts` folders).
 - [ ] Initialize Next.js app in `/frontend` (`npx create-next-app@latest`).
 - [ ] Install Web3 frontend dependencies: `npm install wagmi viem @rainbow-me/rainbowkit @tanstack/react-query`.
 - [ ] Initialize Foundry in `/contracts` (`forge init`).
