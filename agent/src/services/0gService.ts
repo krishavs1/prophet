@@ -160,8 +160,14 @@ export async function call0GAI(prompt: string, systemPrompt?: string): Promise<s
     const data = await response.json();
     return data.choices?.[0]?.message?.content || JSON.stringify(data);
   } catch (e) {
-    console.error('[0G] Inference error:', e);
-    throw new Error(`0G inference failed: ${String(e)}`);
+    const err = e as Error & { cause?: { code?: string } };
+    const isNetwork = err.cause?.code === 'ECONNRESET' || err.message?.includes('fetch failed');
+    if (isNetwork) {
+      console.warn('[0G] Unreachable (connection failed). Use local fallback or check network.');
+    } else {
+      console.error('[0G] Inference error:', e);
+    }
+    throw new Error(`0G inference failed: ${err.message ?? String(e)}`);
   }
 }
 

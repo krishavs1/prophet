@@ -96,7 +96,6 @@ contract Example {
     }
   }, [originalCode, setCode])
 
-  // Update cursor position helper
   const updateCursorPosition = (textarea: HTMLTextAreaElement) => {
     const value = textarea.value
     const textBeforeCursor = value.substring(0, textarea.selectionStart)
@@ -107,14 +106,12 @@ contract Example {
     })
   }
 
-  // Update cursor position
   const handleTextareaChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value
     setLocalCode(value)
     updateCursorPosition(e.target)
   }
 
-  // Handle cursor movement events for real-time updates
   const handleCursorMove = (e: React.MouseEvent<HTMLTextAreaElement> | React.KeyboardEvent<HTMLTextAreaElement>) => {
     updateCursorPosition(e.currentTarget)
   }

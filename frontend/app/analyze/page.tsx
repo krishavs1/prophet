@@ -9,53 +9,42 @@ import { Button } from "@/components/ui/button"
 export default function AnalyzePage(): JSX.Element {
   return (
     <div className="flex h-screen flex-col bg-background">
-      {/* Top Navigation Bar */}
-      <header className="flex items-center justify-between border-b border-border bg-card px-6 py-3">
+      <header className="flex items-center justify-between border-b border-border/80 bg-card/50 px-5 py-2.5">
         <div className="flex items-center gap-3">
-          <div className="flex size-8 items-center justify-center rounded-lg bg-neon-green/10 border border-neon-green/20">
-            <Shield className="size-4 text-neon-green" aria-hidden="true" />
+          <div className="flex size-8 items-center justify-center rounded-lg border border-emerald-500/25 bg-emerald-500/10">
+            <Shield className="size-4 text-emerald-500" aria-hidden="true" />
           </div>
           <div>
             <h1 className="text-sm font-bold tracking-tight text-foreground">
-              Web3 Security Guardian
+              Prophet
             </h1>
-            <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-widest">
-              Smart Contract Audit Pipeline
+            <p className="text-[10px] text-muted-foreground font-mono uppercase tracking-wider">
+              Audit · Fuzz · Patch
             </p>
           </div>
         </div>
-
         <PipelineStepper />
-
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2 text-xs text-muted-foreground font-mono">
-            <span className="size-2 rounded-full bg-neon-green animate-pulse" aria-hidden="true" />
-            <span>Network: Ethereum Testnet</span>
-          </div>
+          <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
+            Foundry
+          </span>
           <Link href="/">
-            <Button variant="secondary" size="sm">
-              Back to Home
+            <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
+              Back
             </Button>
           </Link>
         </div>
       </header>
 
-      {/* Main Content - 3-Pane Layout */}
       <main className="flex flex-1 overflow-hidden">
-        {/* Left Pane: Code Editor */}
-        <div className="w-[52%] border-r border-border p-3">
+        <div className="w-[50%] min-w-[320px] border-r border-border/80 p-4">
           <CodeEditor />
         </div>
-
-        {/* Right Pane: Split Top/Bottom */}
-        <div className="flex flex-1 flex-col">
-          {/* Top Right: AI Vulnerability Report */}
-          <div className="flex-1 overflow-hidden border-b border-border p-3">
+        <div className="flex flex-1 flex-col min-w-0">
+          <div className="flex-1 overflow-hidden min-h-0 p-4 border-b border-border/80">
             <VulnerabilityReport />
           </div>
-
-          {/* Bottom Right: Fuzzing Terminal */}
-          <div className="h-[45%] p-3">
+          <div className="h-[42%] min-h-[140px] p-4 flex flex-col">
             <FuzzingTerminal />
           </div>
         </div>

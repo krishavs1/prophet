@@ -61,22 +61,30 @@ Return a JSON report with risk_score, risk_level, summary, vulnerabilities, expl
           };
         }
       } catch (e) {
-        console.warn('[Analyzer] Failed to parse 0G JSON response, falling back to stub');
+        console.warn('[Analyzer] 0G response invalid, using stub report.');
       }
     } catch (e) {
-      console.warn('[Analyzer] 0G analysis failed, falling back to stub:', e);
+      console.warn('[Analyzer] Using stub report (0G unavailable).');
     }
   }
 
-  // Fallback: stub report
+  // Fallback: stub report (0G offline or unavailable)
   return {
     contract_name: contractName,
     source_hash: sourceHash,
     risk_score: 0,
     risk_level: 'low',
-    summary: 'Stub analysis — no findings yet. Set PRIVATE_KEY_DEPLOYER in .env for 0G AI-powered analysis.',
+    summary: 'Stub analysis — no findings yet. Connect 0G for AI-powered analysis and attack paths.',
     vulnerabilities: [],
-    exploit_paths: [],
+    exploit_paths: [
+      {
+        name: 'Example attack path',
+        success_criteria: 'Attack paths are populated when 0G AI analysis runs successfully.',
+        steps: [
+          { action: 'Run analysis with 0G enabled', pre_state: {}, post_state: {}, notes: 'Requires PRIVATE_KEY_DEPLOYER and 0G network reachable.' },
+        ],
+      },
+    ],
     fix_suggestions: [],
     meta: {
       generated_at: now,
