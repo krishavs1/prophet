@@ -1,6 +1,7 @@
 "use client"
 
 import { Code2, Brain, FlaskConical, Rocket, ChevronRight } from "lucide-react"
+import { usePipelineStore } from "@/src/store/usePipelineStore"
 
 const steps = [
   { id: 1, label: "Input Code", icon: Code2 },
@@ -9,18 +10,18 @@ const steps = [
   { id: 4, label: "Safe Deployment", icon: Rocket },
 ]
 
-const activeStep = 3
-
 export function PipelineStepper() {
+  const currentStep = usePipelineStore((state) => state.currentStep)
+
   return (
     <nav
       aria-label="Deployment pipeline progress"
       className="flex items-center justify-center gap-0 px-6"
     >
       {steps.map((step, index) => {
-        const isCompleted = step.id < activeStep
-        const isActive = step.id === activeStep
-        const isFuture = step.id > activeStep
+        const isCompleted = step.id < currentStep
+        const isActive = step.id === currentStep
+        const isFuture = step.id > currentStep
         const Icon = step.icon
 
         return (
@@ -58,7 +59,7 @@ export function PipelineStepper() {
             {index < steps.length - 1 && (
               <ChevronRight
                 className={`mx-1 size-4 shrink-0 ${
-                  step.id < activeStep ? "text-neon-green/40" : "text-muted-foreground/30"
+                  step.id < currentStep ? "text-neon-green/40" : "text-muted-foreground/30"
                 }`}
                 aria-hidden="true"
               />
