@@ -4,8 +4,10 @@
   "private": true,
   "scripts": {
     "dev": "echo 'Contracts dev - to be implemented'",
-    "build": "echo 'Contracts build - to be implemented'",
-    "test": "echo 'Contracts tests - to be implemented'",
-    "lint": "echo 'Contracts lint - to be implemented'"
+    "build": "forge build",
+    "test": "forge test",
+    "lint": "forge fmt --check",
+    "format": "forge fmt",
+    "check-foundry": "forge --version || (echo 'Foundry not found. Install with: curl -L https://foundry.paradigm.xyz | bash && foundryup' && exit 1)"
   }
 }

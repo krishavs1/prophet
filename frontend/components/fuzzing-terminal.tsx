@@ -3,6 +3,7 @@
 import { useEffect, useRef } from "react"
 import { Terminal, Circle } from "lucide-react"
 import { usePipelineStore } from "@/src/store/usePipelineStore"
+import { useSimulation } from "@/src/hooks/useSimulation"
 
 const typeColorMap: Record<string, string> = {
   command: "text-neon-green",
@@ -17,6 +18,7 @@ const typeColorMap: Record<string, string> = {
 export function FuzzingTerminal() {
   const scrollRef = useRef<HTMLDivElement>(null)
   const { terminalLogs, isTerminalLive, isFuzzing } = usePipelineStore()
+  useSimulation() // Hook handles starting simulation when isFuzzing is true
 
   useEffect(() => {
     if (scrollRef.current) {
