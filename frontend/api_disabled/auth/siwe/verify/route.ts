@@ -24,17 +24,17 @@ export async function POST(req: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: 'Missing nonce cookie' }, { status: 400 })
   }
 
-  const siweMessage: SiweMessage = new SiweMessage(message)
-  const fields = await siweMessage.validate(signature)
-  if (!fields) {
+  const siweMessage = new SiweMessage(message)
+  const result = await siweMessage.verify({ signature })
+  if (!result.success || !result.data) {
     return NextResponse.json({ error: 'Invalid SIWE' }, { status: 401 })
   }
 
-  if (fields.nonce !== nonceCookie) {
+  if (result.data.nonce !== nonceCookie) {
     return NextResponse.json({ error: 'Bad nonce' }, { status: 401 })
   }
 
-  const address: string = (fields.address ?? '').toLowerCase()
+  const address: string = (result.data.address ?? '').toLowerCase()
   if (!address) {
     return NextResponse.json({ error: 'Missing address' }, { status: 400 })
   }
