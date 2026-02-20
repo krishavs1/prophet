@@ -1,112 +1,225 @@
-# 0G Agent Setup Guide
+# 0G Agent Setup Guide (MetaMask)
 
-## Required Environment Variables
+Follow the [0G Inference docs](https://docs.0g.ai/developer-hub/building-on-0g/compute-network/inference). This guide walks you through **MetaMask + CLI** so the Prophet agent can use 0G AI.
 
-You need two things in your `.env` file for 0G AI integration:
+---
 
-### 1. `PRIVATE_KEY_DEPLOYER` (Wallet Private Key)
+## Important: Two different 0G balances
 
-**What it is:** A private key from an Ethereum-compatible wallet
+Your wallet can show **0G in two different places**:
 
-**Why you need it:**
-0G Compute Network uses **blockchain-based authentication and payment**, not API keys. The wallet is used for:
-- 🔐 **Authentication** - Proving your identity to the 0G network
-- 💰 **Payment** - Depositing 0G tokens to pay for AI inference (like prepaid credits)
-- ✍️ **Signing** - Cryptographically signing requests to providers
+| Where you see it | What it is | Used for Prophet? |
+|------------------|------------|-------------------|
+| **“All networks” / Ethereum** | OG on Ethereum (or another chain). You might see e.g. **0.26 OG** here. | **No.** The agent does not use this. |
+| **“OG Mainnet” in MetaMask** | **Native 0G** on the 0G chain (Chain ID 16661). This is what the agent uses for mainnet. | **Yes.** If this shows **0 OG**, you get “insufficient funds” on mainnet. |
 
-Think of it like: Instead of an API key, you use a crypto wallet that holds tokens to pay for each AI request.
+- **Testnet:** Uses the **0G testnet** chain (Galileo). You get free testnet OG from the [faucet](https://faucet.0g.ai/) (e.g. 0.1/day). No real money.
+- **Mainnet:** Uses the **0G mainnet** chain. You need **native 0G on that chain**. If your OG is only on Ethereum, you must **bridge** it to 0G mainnet first (see below).
 
-**How to get it:**
+---
 
-#### Option A: Create a new wallet (recommended for testing)
+## Prerequisites
+
+- **Node.js >= 22.0.0**
+- **MetaMask** (or any EVM wallet)
+- **0G tokens:** either testnet (from [faucet](https://faucet.0g.ai/)) or mainnet (bridge from Ethereum – see “Using mainnet (real 0G)” below)
+
+---
+
+## Step 1: MetaMask – Get your private key
+
+1. Open **MetaMask**.
+2. Use a **test account** (or create one: Account icon → Add account).
+3. **Export private key:**  
+   Account icon → **Settings** → **Security & Privacy** → **Export Private Key** → enter password → copy.
+4. Copy the key (format `0x` + 64 hex chars). You’ll use it in Step 3 and Step 5.
+
+**Security:** Use a test wallet with no real funds. Never commit this key.
+
+---
+
+## Step 2: Get 0G testnet tokens
+
+1. Go to **https://faucet.0g.ai/**.
+2. Paste your **MetaMask wallet address** (Account 1 → copy address).
+3. Request testnet tokens.
+4. Wait until the balance shows up (usually 1–2 minutes).
+
+You need these tokens to create your 0G account and pay for inference.
+
+---
+
+## Step 3: 0G CLI – Create account and deposit
+
+The 0G Compute Network needs an **on-chain account** for your wallet before inference works. Use the official CLI to **deposit** (this creates and funds the account).
+
+### 3a. Install CLI (from repo root)
+
 ```bash
-# Using Node.js/ethers (one-time setup)
-node -e "const { ethers } = require('ethers'); const wallet = ethers.Wallet.createRandom(); console.log('Address:', wallet.address); console.log('Private Key:', wallet.privateKey);"
+cd /path/to/prophet
+pnpm add -g @0glabs/0g-serving-broker
+# or
+npm install -g @0glabs/0g-serving-broker
 ```
 
-#### Option B: Export from MetaMask
-1. Open MetaMask extension
-2. Click account icon → Settings → Security & Privacy
-3. Click "Export Private Key"
-4. Enter your password
-5. Copy the private key (starts with `0x`)
+### 3b. Set network and login
 
-#### Option C: Use an existing wallet
-If you already have a wallet, export its private key using your wallet's export feature.
-
-**⚠️ Security Warning:** 
-- Never commit private keys to git
-- Use a test wallet with no real funds for development
-- The `.env` file is gitignored, but still be careful
-
-### 2. `RPC_URL_SEPOLIA` (0G Testnet RPC)
-
-**What it is:** The RPC endpoint URL for 0G testnet
-
-**Default value (already set in code):**
-```
-https://evmrpc-testnet.0g.ai
-```
-
-**You can also use:**
-- The default is fine for most cases
-- If you have issues, you can try alternative RPC endpoints
-- No additional setup needed unless you want a custom RPC
-
-## Setup Steps
-
-1. **Create `.env` file** in the **repo root folder** (same level as `package.json`):
-   ```bash
-   # From repo root
-   cp .env.example .env
-   ```
-   
-   **Important:** The `.env` file goes in the **root folder** (`/prophet/.env`), not in the `agent/` folder. The agent will automatically load it.
-
-2. **Add your private key** to `.env`:
-   ```bash
-   PRIVATE_KEY_DEPLOYER=0x1234567890abcdef...  # Your actual private key
-   ```
-
-3. **Optional:** Set custom RPC (or leave default):
-   ```bash
-   RPC_URL_SEPOLIA=https://evmrpc-testnet.0g.ai
-   ```
-
-4. **Get testnet tokens** (required for AI inference):
-   - Visit https://faucet.0g.ai/
-   - Request tokens for your wallet address
-   - **You need 0G tokens to pay for AI inference** - each request costs tokens
-   - The wallet acts like a prepaid account that gets debited per request
-
-## Testing Without 0G
-
-If you don't have a private key yet, the agent will:
-- ✅ Still work and respond to API calls
-- ✅ Return mock responses for `/generate-attack` and `/generate-patch`
-- ✅ Show warnings in logs: `[0G] Using fallback mock response`
-
-This lets you develop the frontend and test the API structure without 0G setup.
-
-## Verify Setup
-
-Once configured, start the agent:
 ```bash
-cd agent && npm run dev
+# Choose testnet when prompted
+0g-compute-cli setup-network
+
+# Login: paste your MetaMask private key when prompted
+0g-compute-cli login
 ```
 
-Look for:
-- ✅ `[0G] Broker initialized` = Success!
-- ⚠️ `[0G] No private key provided` = Using fallback mode
+### 3c. Deposit (creates account + adds funds)
+
+```bash
+# Deposit at least 1.5 0G so you can transfer 1 0G to the inference provider (see 3e).
+# Uses tokens from your wallet.
+0g-compute-cli deposit --amount 1.5
+```
+
+### 3d. Check account
+
+```bash
+0g-compute-cli get-account
+```
+
+You should see your account and balance. If this works, your 0G account exists.
+
+### 3e. Transfer funds to the inference provider (required)
+
+The agent bills the **provider sub-account**, not the main ledger. You must transfer at least **1 0G** to the inference provider before the first request.
+
+```bash
+# List providers to get the provider address
+0g-compute-cli inference list-providers
+
+# Transfer 1 0G to that provider (use the address from the list)
+0g-compute-cli transfer-fund --provider <PROVIDER_ADDRESS> --amount 1 --service inference
+```
+
+If you skip this step, the first `/analyze` call will fail with `InsufficientAvailableBalance` (you have X, provider requires 1 0G).
+
+---
+
+## Using mainnet (real 0G) – bridge first
+
+If you have **0.26 OG on Ethereum** (or “all networks”) but **0 OG on “OG Mainnet”** in MetaMask, the agent will say insufficient funds because it uses **native 0G on the 0G chain**, not Ethereum OG.
+
+**Do this:**
+
+1. **Add 0G Mainnet to MetaMask** (if needed): Network dropdown → Add network → use:
+   - Network name: **0G Mainnet**
+   - RPC: `https://evmrpc.0g.ai`
+   - Chain ID: **16661**
+   - Explorer: `https://chainscan.0g.ai`
+
+2. **Bridge OG from Ethereum → 0G Mainnet**
+   - Go to **[https://hub.0g.ai/bridge](https://hub.0g.ai/bridge?network=mainnet)** (use `?network=mainnet` for mainnet).
+   - Connect the same wallet you use for the agent.
+   - Select **Ethereum** as source and **0G Mainnet** as destination.
+   - Bridge the amount you want (e.g. 0.2 OG). Wait for confirmation.
+
+3. **Check MetaMask:** Switch to **OG Mainnet**. You should see your OG balance (e.g. 0.2 OG) instead of 0.
+
+4. **Use mainnet in the CLI and agent:**
+   - `0g-compute-cli setup-network` → choose **Mainnet**.
+   - `0g-compute-cli login` (same private key as in `.env`).
+   - `0g-compute-cli deposit --amount 1` (or whatever you bridged; need at least 1 for the provider).
+   - `0g-compute-cli inference list-providers` then `0g-compute-cli transfer-fund --provider <ADDRESS> --amount 1 --service inference`.
+   - In repo root **`.env`** set: `0G_RPC_URL=https://evmrpc.0g.ai`.
+   - Restart the agent (`npm run dev` in `agent/`).
+
+After this, “insufficient funds” on mainnet should stop, because your balance on **OG Mainnet** will be used.
+
+---
+
+## Step 4: Root `.env` for the Prophet agent
+
+In the **repo root** (same folder as `package.json`), create or edit `.env`:
+
+```bash
+# From repo root
+cp .env.example .env
+```
+
+Set (use the **same** MetaMask private key as in Step 3):
+
+```env
+PRIVATE_KEY_DEPLOYER=0xYOUR_METAMASK_PRIVATE_KEY
+RPC_URL_SEPOLIA=https://evmrpc-testnet.0g.ai
+```
+
+- Use the **same wallet** (same private key) you used for the CLI deposit.
+- The agent loads this file automatically from the root.
+
+---
+
+## Step 5: Run the agent
+
+```bash
+cd agent
+npm run dev
+```
+
+You should see:
+
+- `[agent] Loaded .env from .../prophet/.env`
+- `[agent] PRIVATE_KEY_DEPLOYER is set (0G enabled)`
+- `[0G] Broker initialized`
+
+Then test:
+
+```bash
+curl -X POST http://localhost:3001/analyze \
+  -H "Content-Type: application/json" \
+  -d '{"source":"contract Test {}"}'
+```
+
+If everything is set up correctly, the response should include `"inference_backend":"0g"` and real AI content (not the stub).
+
+---
+
+## How the agent uses 0G (from the docs)
+
+1. **Broker** – The agent uses `createZGComputeNetworkBroker(wallet)` with your `PRIVATE_KEY_DEPLOYER` (same as [SDK: Initialize the Broker](https://docs.0g.ai/developer-hub/building-on-0g/compute-network/inference#initialize-the-broker)).
+2. **Account** – Your 0G account must exist and have funds (you did this with `deposit` in Step 3).
+3. **Acknowledge provider** – Before the first request to a provider, the agent calls `acknowledgeProviderSigner(providerAddress)` (see [Account Management](https://docs.0g.ai/developer-hub/building-on-0g/compute-network/inference#account-management)).
+4. **Inference** – The agent gets service metadata and request headers, then calls the provider’s `chat/completions` endpoint (see [Make Inference Requests](https://docs.0g.ai/developer-hub/building-on-0g/compute-network/inference#make-inference-requests)).
+
+Testnet has at least one chatbot model (e.g. **qwen-2.5-7b-instruct**); the agent will use an available LLM.
+
+---
 
 ## Troubleshooting
 
-**"Failed to initialize broker"**
-- Check your private key format (should start with `0x`)
-- Ensure RPC URL is accessible
-- Try getting testnet tokens from faucet
+| Error | What to do |
+|-------|------------|
+| **Account does not exist** | Run Step 3 again: `0g-compute-cli login` then `0g-compute-cli deposit --amount 10`. |
+| **Insufficient balance** | Get more tokens from https://faucet.0g.ai/ then `0g-compute-cli deposit --amount 5`. |
+| **InsufficientAvailableBalance (Arg0: …, Arg1: 1000…)** | Your main account has funds but the **provider sub-account** needs at least **1 0G**. Run `0g-compute-cli inference list-providers`, then `0g-compute-cli transfer-fund --provider <ADDRESS> --amount 1 --service inference`. If you only have 0.1 0G (faucet daily limit), get more testnet OG (e.g. from faucet over several days or ask in 0G Discord) so you can deposit and transfer 1 0G. |
+| **I have 0.26 OG but “0 OG” on OG Mainnet / insufficient funds** | Your OG is on **Ethereum** (or another chain), not on the **0G chain**. The agent uses **native 0G on 0G mainnet**. Bridge first: [hub.0g.ai/bridge](https://hub.0g.ai/bridge?network=mainnet) (Ethereum → 0G Mainnet). Then in MetaMask under “OG Mainnet” you’ll see the balance; run `deposit` and `transfer-fund` as in Step 3 and the “Using mainnet (real 0G)” section above. |
+| **Provider not acknowledged** | After transferring to the provider (Step 3e), the agent acknowledges automatically. To do it manually: `0g-compute-cli inference acknowledge-provider --provider <PROVIDER_ADDRESS>` (get address from `0g-compute-cli inference list-providers`). |
+| **No private key / fallback mode** | Ensure `PRIVATE_KEY_DEPLOYER` is in **root** `.env` and the agent was restarted after editing. |
+| **Failed to import SDK** | Agent uses the CJS build; if you still see ESM errors, try Node 22 (e.g. `nvm use 22`). |
 
-**"No 0G services available"**
-- Check network connectivity
-- Verify RPC URL is correct
-- May need to wait for 0G testnet services to be available
+---
+
+## Optional: Web UI (no code)
+
+To try 0G with a UI and the same wallet:
+
+1. **https://compute-marketplace.0g.ai/inference**
+2. Connect **MetaMask** (same account you used above).
+3. Deposit in the UI if needed, then use “Chat” or “Build” on a provider.
+
+Same account (same wallet) works for both the Web UI and the Prophet agent.
+
+---
+
+## Reference
+
+- [0G Compute Inference](https://docs.0g.ai/developer-hub/building-on-0g/compute-network/inference) – prerequisites, CLI, SDK, account, troubleshooting.
+- [0G Testnet Faucet](https://faucet.0g.ai/) – get testnet tokens.

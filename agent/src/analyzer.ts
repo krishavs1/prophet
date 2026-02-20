@@ -74,7 +74,7 @@ Return a JSON report with risk_score, risk_level, summary, vulnerabilities, expl
     source_hash: sourceHash,
     risk_score: 0,
     risk_level: 'low',
-    summary: 'Stub analysis — no findings yet. Set ZERO_G_API_KEY for AI-powered analysis.',
+    summary: 'Stub analysis — no findings yet. Set PRIVATE_KEY_DEPLOYER in .env for 0G AI-powered analysis.',
     vulnerabilities: [],
     exploit_paths: [],
     fix_suggestions: [],

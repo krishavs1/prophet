@@ -3,22 +3,31 @@
  * Handles AI inference for attack generation and remediation.
  */
 import { ethers } from 'ethers';
+import { createRequire } from 'module';
 
-const PRIVATE_KEY = process.env.PRIVATE_KEY_DEPLOYER;
-const RPC_URL = process.env.RPC_URL_SEPOLIA || 'https://evmrpc-testnet.0g.ai';
+const require = createRequire(import.meta.url);
 
-// Lazy import to handle ESM module resolution
-async function getBrokerCreator() {
+// Read at module load (after index.ts has loaded .env from root)
+const rawKey = process.env.PRIVATE_KEY_DEPLOYER;
+const PRIVATE_KEY = rawKey?.startsWith('0x') ? rawKey : rawKey ? `0x${rawKey}` : undefined;
+// 0G network: set 0G_RPC_URL to mainnet (https://evmrpc.0g.ai) to use real 0G; omit for testnet
+const RPC_URL =
+  process.env['0G_RPC_URL'] ||
+  process.env.RPC_URL_SEPOLIA ||
+  'https://evmrpc-testnet.0g.ai';
+
+// Use CommonJS require - the ESM build is broken on Node 23 (export named 'C' missing)
+function getBrokerCreator(): typeof import('@0glabs/0g-serving-broker').createZGComputeNetworkBroker | null {
   try {
-    const brokerModule = await import('@0glabs/0g-serving-broker');
-    return brokerModule.createZGComputeNetworkBroker;
+    const brokerModule = require('@0glabs/0g-serving-broker');
+    return brokerModule.createZGComputeNetworkBroker ?? null;
   } catch (e) {
-    console.error('[0G] Failed to import SDK:', e);
+    console.error('[0G] Failed to load SDK:', e);
     return null;
   }
 }
 
-type BrokerType = Awaited<ReturnType<NonNullable<Awaited<ReturnType<typeof getBrokerCreator>>>>>;
+type BrokerType = Awaited<ReturnType<NonNullable<ReturnType<typeof getBrokerCreator>>>>;
 let broker: BrokerType | null = null;
 
 /**
@@ -32,7 +41,7 @@ async function initBroker(): Promise<BrokerType | null> {
 
   if (!broker) {
     try {
-      const createBroker = await getBrokerCreator();
+      const createBroker = getBrokerCreator();
       if (!createBroker) {
         return null;
       }
@@ -57,8 +66,8 @@ export async function call0GAI(prompt: string, systemPrompt?: string): Promise<s
   const brokerInstance = await initBroker();
 
   if (!brokerInstance) {
-    // Fallback: return a mock response for development
-    console.warn('[0G] Using fallback mock response (no private key)');
+    // Fallback: SDK failed to load or broker init failed
+    console.warn('[0G] Using fallback mock response (SDK unavailable or init failed)');
     return `[Mock 0G Response] ${prompt.substring(0, 100)}...`;
   }
 
@@ -76,7 +85,24 @@ export async function call0GAI(prompt: string, systemPrompt?: string): Promise<s
 
     // Extract provider address from service (structure may vary)
     const providerAddress = (llmService as any).providerAddress || (llmService as any).provider || (llmService as any)[0];
-    
+
+    // Ensure funds are in the provider sub-account (required before acknowledge).
+    // Testnet provider minimum is 1 OG; main account balance alone is not enough.
+    const minTransferWei = BigInt(1e18); // 1 OG
+    try {
+      await brokerInstance.ledger.transferFund(providerAddress, 'inference', minTransferWei);
+    } catch (transferErr: any) {
+      const msg = transferErr?.shortMessage || String(transferErr);
+      if (msg.includes('InsufficientAvailableBalance') || msg.includes('insufficient')) {
+        throw new Error(
+          '0G: Not enough balance in provider sub-account. You need at least 1 OG transferred to the inference provider. ' +
+          'Run: 0g-compute-cli transfer-fund --provider <ADDRESS> --amount 1 --service inference ' +
+          '(get <ADDRESS> from 0g-compute-cli inference list-providers). Or get more testnet OG from https://faucet.0g.ai and deposit, then transfer.'
+        );
+      }
+      throw transferErr;
+    }
+
     // Acknowledge provider
     await brokerInstance.inference.acknowledgeProviderSigner(providerAddress);
     
