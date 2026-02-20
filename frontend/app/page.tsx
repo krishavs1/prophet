@@ -1,309 +1,202 @@
+"use client"
+
+import { useEffect, useState } from "react"
 import Link from "next/link"
-import {
-  Shield,
-  ArrowRight,
-  Sparkles,
-  Bug,
-  Lock,
-  LineChart,
-  FileCode2,
-  GitBranch,
-} from "lucide-react"
+import { Shield, ArrowRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 
-export default function HomePage(): JSX.Element {
+/* ── Terminal data ── */
+const terminalLines = [
+  { type: "command", text: "$ prophet scan ./contracts/Vault.sol" },
+  { type: "info", text: "Scanning 1 contract..." },
+  { type: "info", text: "" },
+  { type: "critical", text: "[CRITICAL]  Reentrancy in withdraw()  →  L42" },
+  { type: "high", text: "[HIGH]      Missing onlyOwner on setOracle()  →  L78" },
+  { type: "medium", text: "[MEDIUM]    Single oracle source  →  L91" },
+  { type: "info", text: "" },
+  { type: "success", text: "3 issues found. Patches generated." },
+  { type: "info", text: "Run `prophet patch --apply` to review diffs." },
+] as const
+
+type LineType = "command" | "info" | "critical" | "high" | "medium" | "success"
+
+const colorMap: Record<LineType, string> = {
+  command: "text-foreground",
+  info: "text-muted-foreground",
+  critical: "text-[#ff1744]",
+  high: "text-[#ffab00]",
+  medium: "text-[#40c4ff]",
+  success: "text-accent",
+}
+
+/* ── Page ── */
+export default function HomePage() {
+  const [visibleCount, setVisibleCount] = useState(0)
+
+  useEffect(() => {
+    if (visibleCount >= terminalLines.length) return
+    const delay = visibleCount === 0 ? 600 : visibleCount === 1 ? 800 : 300
+    const timer = setTimeout(() => setVisibleCount((c) => c + 1), delay)
+    return () => clearTimeout(timer)
+  }, [visibleCount])
+
   return (
-    <div className="relative min-h-screen bg-background text-foreground">
-      {/* Background Accents */}
-      <div className="pointer-events-none absolute inset-0 -z-10">
-        <div className="absolute left-1/2 top-[-10%] h-[480px] w-[780px] -translate-x-1/2 rounded-full bg-[radial-gradient(ellipse_at_center,rgba(0,255,65,0.06),rgba(0,0,0,0))] blur-2xl" />
-        <div className="absolute right-[-10%] bottom-[-10%] h-[360px] w-[560px] rounded-full bg-[radial-gradient(ellipse_at_center,rgba(255,23,68,0.05),rgba(0,0,0,0))] blur-2xl" />
-        <div className="absolute left-[-10%] bottom-[10%] h-[240px] w-[420px] rounded-full bg-[radial-gradient(ellipse_at_center,rgba(255,171,0,0.04),rgba(0,0,0,0))] blur-2xl" />
-      </div>
+    <div className="relative flex min-h-screen flex-col bg-background text-foreground overflow-hidden">
+      {/* ── Animated background ── */}
+      {/* Grid overlay */}
+      <div
+        className="pointer-events-none absolute inset-0 z-0"
+        style={{
+          backgroundImage:
+            "linear-gradient(rgba(0,255,65,0.07) 1px, transparent 1px), linear-gradient(90deg, rgba(0,255,65,0.07) 1px, transparent 1px)",
+          backgroundSize: "60px 60px",
+          animation: "grid-fade 8s ease-in-out infinite",
+        }}
+      />
+      {/* Glow orb 1 — top left */}
+      <div
+        className="pointer-events-none absolute left-[15%] top-[20%] z-0 size-[500px] rounded-full"
+        style={{
+          background: "radial-gradient(circle, rgba(0,255,65,0.12) 0%, transparent 70%)",
+          animation: "glow-drift 10s ease-in-out infinite",
+        }}
+      />
+      {/* Glow orb 2 — bottom right */}
+      <div
+        className="pointer-events-none absolute bottom-[10%] right-[10%] z-0 size-[400px] rounded-full"
+        style={{
+          background: "radial-gradient(circle, rgba(0,255,65,0.08) 0%, transparent 70%)",
+          animation: "glow-drift-2 12s ease-in-out infinite",
+        }}
+      />
+      {/* Scan line */}
+      <div
+        className="pointer-events-none absolute left-0 z-0 h-px w-full"
+        style={{
+          background: "linear-gradient(90deg, transparent, rgba(0,255,65,0.15), transparent)",
+          animation: "scan-line 6s linear infinite",
+        }}
+      />
 
       {/* Header */}
-      <header className="sticky top-0 z-20 flex items-center justify-between border-b border-border bg-card/70 px-6 py-4 backdrop-blur">
+      <header className="relative z-10 flex items-center justify-between px-8 py-5 lg:px-16">
         <div className="flex items-center gap-3">
-          <div className="flex size-9 items-center justify-center rounded-lg border border-neon-green/20 bg-neon-green/10">
-            <Shield className="size-4 text-neon-green" aria-hidden="true" />
+          <div className="flex size-8 items-center justify-center rounded-md border border-accent/20 bg-accent/10">
+            <Shield className="size-4 text-accent" aria-hidden="true" />
           </div>
-          <div>
-            <h1 className="text-base font-bold tracking-tight">Prophet</h1>
-            <p className="font-mono text-[10px] uppercase tracking-widest text-muted-foreground">
-              AI white-hat for DeFi contracts
-            </p>
-          </div>
+          <span className="text-sm font-bold tracking-tight">Prophet</span>
         </div>
-        <div className="flex items-center gap-4">
-          <Link href="/" className="hidden text-sm text-muted-foreground transition hover:text-foreground md:inline">
-            Home
-          </Link>
+        <nav className="flex items-center gap-6">
           <Link
             href="https://github.com/AaravM11/prophet"
-            className="hidden text-sm text-muted-foreground transition hover:text-foreground md:inline"
+            className="hidden font-mono text-xs uppercase tracking-widest text-muted-foreground transition hover:text-foreground md:inline"
             target="_blank"
             rel="noreferrer"
           >
             GitHub
           </Link>
           <Link href="/analyze">
-            <Button className="group">
-              Launch Analyzer
-              <ArrowRight className="ml-2 size-4 transition group-hover:translate-x-0.5" />
+            <Button className="group bg-accent text-accent-foreground hover:bg-accent/90">
+              Launch
+              <ArrowRight className="ml-1 size-3.5 transition group-hover:translate-x-0.5" />
             </Button>
           </Link>
-        </div>
+        </nav>
       </header>
 
-      <main className="mx-auto max-w-6xl px-6 pb-20 pt-12 md:pt-20">
-        {/* Hero */}
-        <section className="grid gap-10 md:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)] md:items-center">
-          {/* Left: copy */}
-          <div>
-            <div className="mb-4 inline-flex items-center gap-2 rounded-full border border-border bg-card px-3 py-1 text-xs text-muted-foreground">
-              <Sparkles className="size-3.5 text-neon-green" aria-hidden="true" />
-              AI-powered white-hat agent for Solidity
+      {/* Hero — side by side */}
+      <main className="relative z-10 flex flex-1 items-center px-8 pb-12 lg:px-16">
+        <div className="mx-auto flex w-full max-w-7xl flex-col gap-12 lg:flex-row lg:items-center lg:gap-16">
+          {/* Left — copy */}
+          <div className="flex flex-1 flex-col items-start">
+            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-border bg-card/60 px-3 py-1 font-mono text-[11px] uppercase tracking-widest text-muted-foreground backdrop-blur-sm">
+              <span className="inline-block size-1.5 rounded-full bg-accent" />
+              AI white-hat agent
             </div>
-            <h2 className="text-3xl font-extrabold tracking-tight md:text-5xl">
-              Find, explain, and fix DeFi contract risks before they ship.
-            </h2>
-            <p className="mt-4 text-muted-foreground md:text-base">
-              Prophet reads your Solidity, flags reentrancy, oracle manipulation, and access
-              control issues, simulates realistic exploits, and proposes minimal-diff patches. You
-              stay in control: all changes are read-only and reviewable by design.
+
+            <h1 className="text-balance text-4xl font-extrabold tracking-tight md:text-5xl lg:text-6xl xl:text-7xl">
+              Find and fix DeFi contract risks before they ship.
+            </h1>
+
+            <p className="mt-5 max-w-lg text-pretty text-base text-muted-foreground md:text-lg">
+              Prophet scans your Solidity for reentrancy, oracle manipulation, and access control
+              flaws — then generates minimal-diff patches you review and merge.
             </p>
-            <div className="mt-6 flex flex-wrap items-center gap-3">
+
+            <div className="mt-8 flex flex-wrap items-center gap-4">
               <Link href="/analyze">
-                <Button size="lg" className="group">
-                  Start analysis
+                <Button
+                  size="lg"
+                  className="group bg-accent text-accent-foreground hover:bg-accent/90 font-mono uppercase tracking-wider text-xs h-11 px-8"
+                >
+                  Start Analysis
                   <ArrowRight className="ml-2 size-4 transition group-hover:translate-x-0.5" />
                 </Button>
               </Link>
-              <Link href="#features">
-                <Button size="lg" variant="secondary">
-                  Explore features
-                </Button>
-              </Link>
-              <Link href="#how-it-works">
-                <Button size="lg" variant="ghost" className="border border-border/60">
-                  How it works
+              <Link href="https://github.com/AaravM11/prophet" target="_blank" rel="noreferrer">
+                <Button
+                  size="lg"
+                  variant="outline"
+                  className="font-mono uppercase tracking-wider text-xs h-11 px-8 border-border text-muted-foreground hover:text-foreground hover:border-foreground/20"
+                >
+                  View Source
                 </Button>
               </Link>
             </div>
-            <div className="mt-6 text-xs font-mono text-muted-foreground">
-              Read-only by default • Testnet deploy optional • JSON reports for CI
+
+            {/* Inline stats row */}
+            <div className="mt-10 flex flex-wrap items-center gap-6 border-t border-border/50 pt-6">
+              <Stat label="Mode" value="Read-only" />
+              <span className="hidden h-4 w-px bg-border md:block" />
+              <Stat label="Output" value="JSON + Diff" />
+              <span className="hidden h-4 w-px bg-border md:block" />
+              <Stat label="Frameworks" value="Hardhat / Foundry" />
             </div>
           </div>
 
-          {/* Right: mock analyzer panel */}
-          <div className="relative">
-            <div className="pointer-events-none absolute inset-0 -z-10 rounded-3xl bg-gradient-to-br from-neon-green/10 via-transparent to-fuchsia-500/5 blur-xl" />
-            <div className="overflow-hidden rounded-3xl border border-border bg-card/80 backdrop-blur">
-              <div className="flex items-center justify-between border-b border-border/70 px-4 py-3 text-xs">
-                <div className="flex items-center gap-2">
-                  <span className="inline-flex size-2.5 rounded-full bg-neon-green" />
-                  <span className="font-mono text-[11px] text-muted-foreground">
-                    audit/UniswapVault.sol
-                  </span>
-                </div>
-                <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 font-mono text-[10px] uppercase tracking-wide text-emerald-300">
-                  3 critical • 1 high
+          {/* Right — terminal */}
+          <div className="w-full flex-1 lg:max-w-xl xl:max-w-2xl">
+            <div className="overflow-hidden rounded-lg border border-border bg-card/80 shadow-2xl shadow-accent/5 backdrop-blur-sm">
+              {/* Terminal chrome */}
+              <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
+                <span className="size-2.5 rounded-full bg-[#ff1744]/60" />
+                <span className="size-2.5 rounded-full bg-[#ffab00]/60" />
+                <span className="size-2.5 rounded-full bg-accent/60" />
+                <span className="ml-2 font-mono text-[11px] text-muted-foreground">
+                  prophet
                 </span>
               </div>
-
-              <div className="grid gap-0 border-b border-border/70 bg-background/40 text-xs md:grid-cols-[1.1fr_minmax(0,1fr)]">
-                {/* Findings list */}
-                <div className="border-r border-border/70 p-4">
-                  <h3 className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                    Findings
-                  </h3>
-                  <ul className="space-y-2">
-                    <li className="flex items-start gap-2 rounded-lg border border-border/70 bg-card/60 p-2">
-                      <div className="mt-0.5">
-                        <Bug className="size-3.5 text-red-400" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="rounded-full bg-red-500/10 px-2 py-0.5 text-[10px] font-medium text-red-300">
-                            Critical
-                          </span>
-                          <span className="font-mono text-[10px] text-muted-foreground">
-                            Reentrancy in withdraw()
-                          </span>
-                        </div>
-                        <p className="mt-1 text-[11px] text-muted-foreground">
-                          External call before state update allows draining vault via recursive
-                          withdrawals.
-                        </p>
-                      </div>
-                    </li>
-                    <li className="flex items-start gap-2 rounded-lg border border-border/70 bg-card/40 p-2">
-                      <div className="mt-0.5">
-                        <Lock className="size-3.5 text-amber-300" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-[10px] font-medium text-amber-200">
-                            High
-                          </span>
-                          <span className="font-mono text-[10px] text-muted-foreground">
-                            Missing onlyOwner guard
-                          </span>
-                        </div>
-                        <p className="mt-1 text-[11px] text-muted-foreground">
-                          setOracle() callable by anyone; protocol parameters can be hijacked.
-                        </p>
-                      </div>
-                    </li>
-                    <li className="flex items-start gap-2 rounded-lg border border-border/70 bg-card/30 p-2">
-                      <div className="mt-0.5">
-                        <LineChart className="size-3.5 text-sky-300" />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="rounded-full bg-sky-500/10 px-2 py-0.5 text-[10px] font-medium text-sky-200">
-                            Medium
-                          </span>
-                          <span className="font-mono text-[10px] text-muted-foreground">
-                            Oracle manipulation surface
-                          </span>
-                        </div>
-                        <p className="mt-1 text-[11px] text-muted-foreground">
-                          Price feed is single source; MeV-style sandwich attacks are realistic.
-                        </p>
-                      </div>
-                    </li>
-                  </ul>
-                </div>
-
-                {/* Patch preview / diff */}
-                <div className="flex flex-col border-l border-border/70 bg-black/30 p-4">
-                  <div className="mb-2 flex items-center justify-between">
-                    <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                      <GitBranch className="size-3" />
-                      <span>Suggested patch</span>
-                    </div>
-                    <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 font-mono text-[10px] text-emerald-300">
-                      Minimal diff
-                    </span>
+              {/* Terminal body */}
+              <div className="p-5 font-mono text-xs leading-6 md:p-6 md:text-sm md:leading-7">
+                {terminalLines.slice(0, visibleCount).map((line, i) => (
+                  <div key={i} className={colorMap[line.type]}>
+                    {line.text || "\u00A0"}
                   </div>
-                  <div className="relative flex-1 overflow-hidden rounded-xl border border-border/60 bg-gradient-to-br from-[#050608] to-[#040b06]">
-                    <pre className="max-h-[220px] overflow-auto p-3 text-[11px] leading-relaxed text-muted-foreground">
-                      <code>
-                        {`- function withdraw(uint256 amount) external {
--   (bool ok,) = msg.sender.call{value: amount}("");
--   require(ok, "TRANSFER_FAILED");
--   balances[msg.sender] -= amount;
-- }
-
-+ function withdraw(uint256 amount) external nonReentrant {
-+   uint256 bal = balances[msg.sender];
-+   require(bal >= amount, "INSUFFICIENT_BALANCE");
-+   balances[msg.sender] = bal - amount;
-+   (bool ok,) = msg.sender.call{value: amount}("");
-+   require(ok, "TRANSFER_FAILED");
-+ }`}
-                      </code>
-                    </pre>
-                  </div>
-                  <p className="mt-2 text-[11px] text-muted-foreground">
-                    Prophet generates human-readable diffs. You approve, edit, or discard in your
-                    normal Git workflow.
-                  </p>
-                </div>
+                ))}
+                {visibleCount < terminalLines.length && (
+                  <span className="inline-block h-4 w-1.5 animate-pulse bg-accent" />
+                )}
               </div>
             </div>
           </div>
-        </section>
-
-        {/* Features */}
-        <section className="mt-16 space-y-6">
-          <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
-            <div>
-              <h3 className="text-xl font-semibold tracking-tight md:text-2xl">
-                Built for real DeFi audits
-              </h3>
-              <p className="mt-2 max-w-xl text-sm text-muted-foreground">
-                Not just “linting with AI.” Prophet learns from known exploits, simulates flows,
-                and surfaces issues the compiler and static analyzers miss.
-              </p>
-            </div>
-            <div className="text-xs font-mono text-muted-foreground">
-              Supports Solidity &amp; Vyper • Slither-friendly • Hardhat/Foundry ready
-            </div>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card/70 p-4">
-              <div className="inline-flex size-8 items-center justify-center rounded-lg border border-neon-green/30 bg-neon-green/10">
-                <Bug className="size-4 text-neon-green" />
-              </div>
-              <h4 className="text-sm font-semibold">Exploit-aware scanning</h4>
-              <p className="text-sm text-muted-foreground">
-                Detects patterns like reentrancy, flash-loan abuse, oracle games, and role
-                escalation by simulating attacker behavior, not just matching signatures.
-              </p>
-            </div>
-            <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card/70 p-4">
-              <div className="inline-flex size-8 items-center justify-center rounded-lg border border-border/70 bg-background/70">
-                <FileCode2 className="size-4 text-sky-300" />
-              </div>
-              <h4 className="text-sm font-semibold">Explanations your team can ship with</h4>
-              <p className="text-sm text-muted-foreground">
-                Every finding ships with a plain-English impact summary, exploit walkthrough, and
-                references you can drop directly into your audit report.
-              </p>
-            </div>
-            <div className="flex flex-col gap-3 rounded-2xl border border-border bg-card/70 p-4">
-              <div className="inline-flex size-8 items-center justify-center rounded-lg border border-border/70 bg-background/70">
-                <LineChart className="size-4 text-emerald-300" />
-              </div>
-              <h4 className="text-sm font-semibold">CI-ready JSON artifacts</h4>
-              <p className="text-sm text-muted-foreground">
-                Export structured reports for GitHub Actions, fail builds on critical issues, and
-                track risk over time as contracts evolve.
-              </p>
-            </div>
-          </div>
-        </section>
-
-        {/* How it works */}
-        <section className="mt-16">
-          <h3 className="text-xl font-semibold tracking-tight md:text-2xl">How Prophet fits in</h3>
-          <div className="mt-6 grid gap-4 text-sm md:grid-cols-3">
-            <div className="relative rounded-2xl border border-border bg-card/70 p-4">
-              <div className="mb-2 inline-flex rounded-full bg-background/80 px-2 py-0.5 text-[11px] font-mono uppercase tracking-wide text-muted-foreground">
-                Step 1
-              </div>
-              <p className="font-semibold">Point Prophet at your repo or single contract.</p>
-              <p className="mt-2 text-muted-foreground">
-                Paste code, upload a file, or connect your Git remote. Prophet works with Hardhat,
-                Foundry, or raw Solidity.
-              </p>
-            </div>
-            <div className="relative rounded-2xl border border-border bg-card/70 p-4">
-              <div className="mb-2 inline-flex rounded-full bg-background/80 px-2 py-0.5 text-[11px] font-mono uppercase tracking-wide text-muted-foreground">
-                Step 2
-              </div>
-              <p className="font-semibold">Review findings and simulated attack paths.</p>
-              <p className="mt-2 text-muted-foreground">
-                See which functions are abusable, with concrete call sequences and gas-realistic
-                traces instead of vague “high risk” labels.
-              </p>
-            </div>
-            <div className="relative rounded-2xl border border-border bg-card/70 p-4">
-              <div className="mb-2 inline-flex rounded-full bg-background/80 px-2 py-0.5 text-[11px] font-mono uppercase tracking-wide text-muted-foreground">
-                Step 3
-              </div>
-              <p className="font-semibold">Apply minimal-diff patches via your normal workflow.</p>
-              <p className="mt-2 text-muted-foreground">
-                Prophet suggests diffs; you edit, commit, and merge. No hidden deploy step, no
-                opaque “auto-fix” on mainnet.
-              </p>
-            </div>
-          </div>
-        </section>
+        </div>
       </main>
+
+      {/* Bottom bar */}
+      <footer className="relative z-10 border-t border-border px-8 py-4 lg:px-16">
+        <p className="text-center font-mono text-[11px] uppercase tracking-widest text-muted-foreground">
+          Solidity &amp; Vyper
+        </p>
+      </footer>
+    </div>
+  )
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center gap-2 font-mono text-xs">
+      <span className="uppercase tracking-widest text-muted-foreground">{label}</span>
+      <span className="text-foreground">{value}</span>
     </div>
   )
 }
