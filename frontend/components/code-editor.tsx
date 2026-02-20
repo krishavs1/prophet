@@ -2,7 +2,7 @@
 
 import { useRef, useState, useEffect } from "react"
 import { FileCode2, AlertTriangle, Upload, Play, Copy } from "lucide-react"
-import { usePipelineStore } from "@/src/store/usePipelineStore"
+import { usePipelineStore, type ExploitStep } from "@/src/store/usePipelineStore"
 import { Button } from "@/components/ui/button"
 
 function tokenize(line: string) {
@@ -222,7 +222,19 @@ contract Example {
       }))
       const exploitPaths = (report.exploit_paths ?? []).map((p) => ({
         name: p.name ?? "Attack path",
-        steps: Array.isArray(p.steps) ? p.steps : [],
+        steps: (Array.isArray(p.steps) ? p.steps : []).map((s): ExploitStep => {
+          const step = s as Record<string, unknown>
+          return {
+            action: typeof step?.action === "string" ? step.action : "",
+            pre_state: step?.pre_state && typeof step.pre_state === "object" && !Array.isArray(step.pre_state)
+              ? (step.pre_state as Record<string, string>)
+              : {},
+            post_state: step?.post_state && typeof step.post_state === "object" && !Array.isArray(step.post_state)
+              ? (step.post_state as Record<string, string>)
+              : {},
+            notes: typeof step?.notes === "string" ? step.notes : "",
+          }
+        }),
         success_criteria: p.success_criteria ?? "",
       }))
       const fixSuggestions = (report.fix_suggestions ?? []).map((f, i) => ({

@@ -11,6 +11,7 @@ import { analyze } from './analyzer.js';
 import { generateAttack, generateAttackFromReport } from './services/attackGenerator.js';
 import { generatePatch } from './services/patchGenerator.js';
 import { runFoundryTests } from './services/simulationService.js';
+import { get0GAccountBalance } from './services/0gService.js';
 
 const PORT = Number(process.env.PORT) || 3001;
 
