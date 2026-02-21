@@ -10,6 +10,26 @@ import { spawn } from 'node:child_process';
 const DOCKER_IMAGE = process.env.FORGE_DOCKER_IMAGE || 'prophet-forge';
 const TIMEOUT_MS = Number(process.env.FORGE_TIMEOUT_MS) || 120_000;
 
+function useDockerSandbox(): boolean {
+  const val = process.env.USE_DOCKER_SANDBOX;
+  if (val === undefined) return true;
+  return val !== '0' && val.toLowerCase() !== 'false';
+}
+
+function getForgeCommand(): string {
+  if (process.env.FORGE_PATH) return process.env.FORGE_PATH;
+  const candidates = [
+    path.join(os.homedir(), '.foundry', 'bin', 'forge'),
+    '/opt/render/.foundry/bin/forge',
+    '/root/.foundry/bin/forge',
+    '/home/render/.foundry/bin/forge',
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
+  return 'forge';
+}
+
 const FOUNDRY_TOML = `[profile.default]
 src = "src"
 out = "out"
@@ -131,12 +151,25 @@ export async function compileSource(
     const cleaned = cleanSource(source);
     fs.writeFileSync(path.join(srcDir, filename), cleaned);
 
-    const { exitCode, output } = await runCommand(
-      'docker',
-      dockerArgs(tmpDir, 'forge build --names'),
-      tmpDir,
-      TIMEOUT_MS
-    );
+    let exitCode: number;
+    let output: string;
+
+    if (useDockerSandbox()) {
+      ({ exitCode, output } = await runCommand(
+        'docker',
+        dockerArgs(tmpDir, 'forge build --names'),
+        tmpDir,
+        TIMEOUT_MS
+      ));
+    } else {
+      const forgeCmd = getForgeCommand();
+      ({ exitCode, output } = await runCommand(
+        forgeCmd,
+        ['build', '--names'],
+        tmpDir,
+        TIMEOUT_MS
+      ));
+    }
 
     if (exitCode !== 0) {
       throw new Error(`Compilation failed:\n${output.slice(-2000)}`);

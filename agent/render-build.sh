@@ -14,6 +14,10 @@ export PATH="$HOME/.foundry/bin:$PATH"
 foundryup
 forge --version
 
+echo "==> Persisting Foundry path for runtime"
+echo "FORGE_PATH=$HOME/.foundry/bin/forge" >> "$HOME/.profile"
+echo "Foundry installed at: $HOME/.foundry/bin/forge"
+
 echo "==> Patching 0G SDK (npm v0.3.3 has stale flow contract ABI)"
 git clone --depth 1 https://github.com/0gfoundation/0g-ts-sdk.git /tmp/0g-sdk-patch
 cd /tmp/0g-sdk-patch

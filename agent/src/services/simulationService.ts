@@ -27,9 +27,15 @@ function useDockerSandbox(): boolean {
 
 function getForgeCommand(): string {
   if (process.env.FORGE_PATH) return process.env.FORGE_PATH;
-  const home = os.homedir();
-  const defaultPath = path.join(home, '.foundry', 'bin', 'forge');
-  if (home && fs.existsSync(defaultPath)) return defaultPath;
+  const candidates = [
+    path.join(os.homedir(), '.foundry', 'bin', 'forge'),
+    '/opt/render/.foundry/bin/forge',
+    '/root/.foundry/bin/forge',
+    '/home/render/.foundry/bin/forge',
+  ];
+  for (const p of candidates) {
+    if (fs.existsSync(p)) return p;
+  }
   return 'forge';
 }
 
