@@ -136,6 +136,46 @@ After this, “insufficient funds” on mainnet should stop, because your balanc
 
 ---
 
+## Foundry Docker Sandbox
+
+The `/simulate` endpoint runs user-submitted Solidity in Foundry. By default, each run is isolated inside a Docker container with:
+
+- **No network** (`--network none`)
+- **Limited resources** (`--memory 512m`, `--cpus 1`)
+- **Read-only filesystem** (source files mounted `:ro`)
+- **`ffi = false`** in `foundry.toml` (prevents arbitrary shell commands)
+- **120-second timeout** (configurable via `FORGE_TIMEOUT_MS`)
+
+### Build the sandbox image (one-time)
+
+```bash
+cd agent/docker
+./build-image.sh
+```
+
+This builds the `prophet-forge` Docker image with Foundry and `forge-std` pre-installed. No downloads happen per test run.
+
+### Running without Docker (local dev)
+
+If you don't have Docker, set in root `.env`:
+
+```env
+USE_DOCKER_SANDBOX=false
+```
+
+This falls back to running `forge` directly on the host. **Not recommended for production** — user code runs with your system permissions.
+
+### Environment variables
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `USE_DOCKER_SANDBOX` | `true` | Set to `false` to skip Docker and run forge locally |
+| `FORGE_DOCKER_IMAGE` | `prophet-forge` | Docker image name for the sandbox |
+| `FORGE_TIMEOUT_MS` | `120000` | Max time (ms) before killing a test run |
+| `FORGE_PATH` | auto-detected | Path to forge binary (only used when Docker is off) |
+
+---
+
 ## Step 4: Root `.env` for the Prophet agent
 
 In the **repo root** (same folder as `package.json`), create or edit `.env`:

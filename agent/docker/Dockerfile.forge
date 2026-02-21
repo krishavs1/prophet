@@ -1,0 +1,21 @@
+FROM ghcr.io/foundry-rs/foundry:latest
+
+WORKDIR /project
+
+ENV FOUNDRY_DISABLE_NIGHTLY_WARNING=1
+
+# Initialize project with forge-std
+RUN forge init --no-git .
+
+# Write the same foundry.toml the agent uses at runtime, so solc 0.8.28
+# gets downloaded and cached in ~/.svm/ during the image build.
+RUN printf '[profile.default]\nsrc = "src"\nout = "out"\nlibs = ["lib"]\nsolc = "0.8.28"\nevm_version = "cancun"\nffi = false\nremappings = ["forge-std/=lib/forge-std/src/"]\n\n[fmt]\nline_length = 100\n' > foundry.toml
+
+# Compile the default Counter.sol to force solc 0.8.28 download + cache
+RUN forge build
+
+# Clear user-facing dirs; agent bind-mounts its own src/ and test/ at runtime
+RUN rm -rf src/* test/* out/* cache/*
+
+ENTRYPOINT ["sh", "-c"]
+CMD ["forge build && forge test -vvv"]
