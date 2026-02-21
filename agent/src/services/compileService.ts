@@ -35,7 +35,7 @@ function installLocalDeps(tmpDir: string, source: string): void {
   execSync(`git init`, { cwd: tmpDir, stdio: 'pipe' });
   execSync(`${forgeCmd} install foundry-rs/forge-std --no-git`, { cwd: tmpDir, stdio: 'pipe', timeout: TIMEOUT_MS });
   if (source.includes('@openzeppelin')) {
-    execSync(`${forgeCmd} install OpenZeppelin/openzeppelin-contracts --no-git`, { cwd: tmpDir, stdio: 'pipe', timeout: TIMEOUT_MS });
+    execSync(`${forgeCmd} install OpenZeppelin/openzeppelin-contracts@v4.9.6 --no-git`, { cwd: tmpDir, stdio: 'pipe', timeout: TIMEOUT_MS });
     const tomlPath = path.join(tmpDir, 'foundry.toml');
     let toml = fs.readFileSync(tomlPath, 'utf-8');
     toml = toml.replace(

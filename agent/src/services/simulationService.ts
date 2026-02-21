@@ -611,7 +611,7 @@ function detectDependencies(tmpDir: string): string[][] {
     } catch { /* skip */ }
   }
   if (needsOz) {
-    deps.push(['OpenZeppelin/openzeppelin-contracts', '--no-git']);
+    deps.push(['OpenZeppelin/openzeppelin-contracts@v4.9.6', '--no-git']);
   }
   return deps;
 }
