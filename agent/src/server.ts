@@ -11,6 +11,7 @@ import { analyze } from './analyzer.js';
 import { generateAttack, generateAttackFromReport } from './services/attackGenerator.js';
 import { generatePatch, generateFixFromReport } from './services/patchGenerator.js';
 import { runFoundryTests } from './services/simulationService.js';
+import { compileSource } from './services/compileService.js';
 import { get0GAccountBalance } from './services/0gService.js';
 
 const PORT = Number(process.env.PORT) || 3001;
@@ -189,6 +190,27 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  if (req.method === 'POST' && path === '/compile') {
+    let body = '';
+    for await (const chunk of req) body += chunk;
+    try {
+      const parsed = JSON.parse(body) as { source?: string; contractName?: string };
+      const { source, contractName } = parsed;
+      if (typeof source !== 'string') {
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: 'Missing or invalid "source" string' }));
+        return;
+      }
+      const result = await compileSource(source, contractName);
+      res.writeHead(200);
+      res.end(JSON.stringify(result));
+    } catch (e) {
+      res.writeHead(500);
+      res.end(JSON.stringify({ error: String((e as Error).message) }));
+    }
+    return;
+  }
+
   if (req.method === 'POST' && path === '/generate-patch') {
     let body = '';
     for await (const chunk of req) body += chunk;
@@ -230,4 +252,5 @@ server.listen(PORT, () => {
   console.log(`  POST /simulate - Run Foundry tests, stream output`);
   console.log(`  POST /generate-fix - Generate patched contract from analysis report`);
   console.log(`  POST /generate-patch - Generate patched contract from crash trace`);
+  console.log(`  POST /compile - Compile contract to bytecode + ABI for deployment`);
 });
