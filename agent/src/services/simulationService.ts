@@ -242,6 +242,12 @@ function fixCommonSolidityIssues(code: string): string {
     'payable(address($1))'
   );
 
+  // payable(0xDeadBeef) is invalid — literal is int, not address. Must be payable(address(0x...)).
+  f = f.replace(
+    /payable\((0x[0-9a-fA-F]{2,40})\)/g,
+    'payable(address($1))'
+  );
+
   // Strip {value: ...} from non-constructor calls — often applied to non-payable functions.
   // Keeps constructor{value: ...} intact. Removes e.g. target.withdraw{value: 1 ether}(...)
   f = f.replace(
@@ -255,6 +261,9 @@ function fixCommonSolidityIssues(code: string): string {
     const hexMatch = line.match(/0x[0-9a-fA-F]{43,}/);
     return !hexMatch;
   }).join('\n');
+
+  // Remove lines calling hallucinated .arbitraryCall() — not a real OZ or common contract function.
+  f = f.split('\n').filter((line) => !line.includes('.arbitraryCall(')).join('\n');
 
   // Remove any non-hex characters in address() literals: address(0xburn) → address(0)
   f = f.replace(
