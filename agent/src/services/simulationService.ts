@@ -440,7 +440,8 @@ Key rules:
 // Docker-sandboxed execution (with build-check-fix loop)
 // ---------------------------------------------------------------------------
 
-const MAX_FIX_ATTEMPTS = 3;
+/** Total tries = MAX_FIX_ATTEMPTS + 1 (e.g. 7 → "attempt 1/8" … "7/8"). */
+const MAX_FIX_ATTEMPTS = 7;
 
 async function* runDockerFoundry(
   tmpDir: string,

@@ -83,6 +83,45 @@ function cleanSource(source: string): string {
   );
 }
 
+/**
+ * Fix invalid calldata assembly for Solidity 0.8+ (Error 1397).
+ * Replaces direct calldata access (add(data, 0x20), mload(data)) with
+ * calldatacopy + call using data.offset and data.length.
+ */
+function fixCalldataAssembly(source: string): string {
+  return source.replace(
+    /(\s*)let result := call\(gas\(\), target, 0, add\(data, 0x20\), mload\(data\), 0, 0\)/g,
+    (_, indent) =>
+      `${indent}calldatacopy(0, data.offset, data.length)\n${indent}let result := call(gas(), target, 0, 0, data.length, 0, 0)`
+  );
+}
+
+const BRACE_ONLY = /^\s*}\s*$/;
+
+/**
+ * Fix Error 7858 (modifier at file level): often caused by an extra `}` that closed
+ * the contract before the modifier. Removes one of two consecutive brace-only lines
+ * before the modifier line so the modifier stays inside the contract.
+ */
+function fixModifierOutsideContract(source: string, modifierLineNum: number): string {
+  const lines = source.split('\n');
+  const before = lines.slice(0, Math.min(modifierLineNum, lines.length));
+  for (let i = before.length - 2; i >= 0; i--) {
+    if (BRACE_ONLY.test(before[i]!) && BRACE_ONLY.test(before[i + 1]!)) {
+      const fixed = [...before];
+      fixed.splice(i + 1, 1);
+      return fixed.concat(lines.slice(before.length)).join('\n');
+    }
+  }
+  return source;
+}
+
+/** Extract line number from Solidity error line like "  --> src/X.sol:95:1:" or ":95:1". */
+function parseErrorLineNum(output: string): number | null {
+  const m = output.match(/:(\d+):\d+:\s*$/m) || output.match(/\b(\d+):\d+:/);
+  return m ? parseInt(m[1]!, 10) : null;
+}
+
 function dockerArgs(tmpDir: string, cmd: string): string[] {
   const outDir = path.join(tmpDir, 'out');
   fs.mkdirSync(outDir, { recursive: true });
@@ -164,28 +203,39 @@ export async function compileSource(
     fs.writeFileSync(path.join(tmpDir, 'foundry.toml'), FOUNDRY_TOML);
 
     const filename = getSourceFilename(source);
-    const cleaned = cleanSource(source);
+    let cleaned = fixCalldataAssembly(cleanSource(source));
     fs.writeFileSync(path.join(srcDir, filename), cleaned);
 
     let exitCode: number;
     let output: string;
 
-    if (useDockerSandbox()) {
-      ({ exitCode, output } = await runCommand(
-        'docker',
-        dockerArgs(tmpDir, 'forge build --names'),
-        tmpDir,
-        TIMEOUT_MS
-      ));
-    } else {
+    const runBuild = async (src: string) => {
+      fs.writeFileSync(path.join(srcDir, filename), src);
+      if (useDockerSandbox()) {
+        return runCommand(
+          'docker',
+          dockerArgs(tmpDir, 'forge build --names'),
+          tmpDir,
+          TIMEOUT_MS
+        );
+      }
       const forgeCmd = getForgeCommand();
-      installLocalDeps(tmpDir, cleaned);
-      ({ exitCode, output } = await runCommand(
-        forgeCmd,
-        ['build', '--names'],
-        tmpDir,
-        TIMEOUT_MS
-      ));
+      installLocalDeps(tmpDir, src);
+      return runCommand(forgeCmd, ['build', '--names'], tmpDir, TIMEOUT_MS);
+    };
+
+    ({ exitCode, output } = await runBuild(cleaned));
+
+    // Retry once on Error 7858 (modifier outside contract) by removing a duplicate }
+    if (exitCode !== 0 && output.includes('7858') && output.includes('modifier')) {
+      const lineNum = parseErrorLineNum(output);
+      if (lineNum != null) {
+        cleaned = fixModifierOutsideContract(cleaned, lineNum);
+        const retry = await runBuild(cleaned);
+        if (retry.exitCode === 0) {
+          ({ exitCode, output } = retry);
+        }
+      }
     }
 
     if (exitCode !== 0) {

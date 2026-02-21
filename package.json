@@ -20,6 +20,11 @@
     "node": ">=18.0.0",
     "npm": ">=9.0.0"
   },
+  "overrides": {
+    "@0glabs/0g-ts-sdk": {
+      "ethers": "6.16.0"
+    }
+  },
   "devDependencies": {
     "prettier": "^3.2.5"
   },
