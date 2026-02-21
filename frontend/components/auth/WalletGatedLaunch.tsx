@@ -46,12 +46,12 @@ function WalletGatedLaunchInner(): JSX.Element {
   }
 
   return (
-    <Link href="/analyze">
-      <Button size="lg" className={launchButtonClass}>
-        Start Analysis
+    <Button asChild size="lg" className={launchButtonClass}>
+      <Link href="/dashboard">
+        Launch
         <ArrowRight className="ml-2 size-4 transition group-hover:translate-x-0.5" />
-      </Button>
-    </Link>
+      </Link>
+    </Button>
   )
 }
 
@@ -87,11 +87,11 @@ function WalletGatedLaunchHeaderInner(): JSX.Element {
   }
 
   return (
-    <Link href="/analyze">
-      <Button className="group bg-accent text-accent-foreground hover:bg-accent/90">
+    <Button asChild className="group bg-accent text-accent-foreground hover:bg-accent/90">
+      <Link href="/dashboard">
         Launch
         <ArrowRight className="ml-1 size-3.5 transition group-hover:translate-x-0.5" />
-      </Button>
-    </Link>
+      </Link>
+    </Button>
   )
 }

@@ -51,9 +51,9 @@ function AnalyzePageContent(): JSX.Element {
             Foundry
           </span>
           <WalletAuthButton />
-          <Link href="/">
+          <Link href="/dashboard">
             <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
-              Back
+              Dashboard
             </Button>
           </Link>
         </div>
