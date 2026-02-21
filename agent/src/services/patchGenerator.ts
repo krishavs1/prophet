@@ -117,7 +117,8 @@ Return ONLY the Solidity code, no markdown, no explanations, no code fences. Sta
  */
 export async function generateFixFromReport(
   originalCode: string,
-  report: ProphetReport
+  report: ProphetReport,
+  simulationTrace?: string
 ): Promise<string> {
   const vulnSummary =
     report.vulnerabilities.length > 0
@@ -132,6 +133,10 @@ export async function generateFixFromReport(
           .join('\n')
       : 'None listed.';
 
+  const traceSection = simulationTrace?.trim()
+    ? `\n\nFoundry simulation trace (runtime evidence):\n\`\`\`\n${simulationTrace.slice(-2000)}\n\`\`\`\n\nUse this trace to understand exactly how the exploits behave at runtime.`
+    : '';
+
   const prompt = `Original Solidity contract:
 
 \`\`\`solidity
@@ -143,7 +148,7 @@ Vulnerabilities:
 ${vulnSummary}
 
 Fix suggestions:
-${fixSummary}
+${fixSummary}${traceSection}
 
 Write the complete patched Solidity contract that fixes these vulnerabilities. Return ONLY the patched code, no markdown.`;
 

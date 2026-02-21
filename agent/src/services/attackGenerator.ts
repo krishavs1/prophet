@@ -1,84 +1,145 @@
 /**
  * Attack Generator: Uses 0G AI to generate Foundry invariant tests.
- * Can use raw source only or analysis report (vulnerabilities + exploit_paths) for targeted malicious tests.
+ *
+ * Primary path: template-based generation (JSON plan -> validated Solidity).
+ * Fallback: raw Solidity generation with post-processing (legacy).
  */
 import type { ProphetReport } from '../types/report.js';
 import { call0GAI, is0GAvailable } from './0gService.js';
+import { generateTestFromTemplate } from './templateTestGenerator.js';
 
-const SINGLE_FILE_STRUCTURE = `Structure (all in ONE file, in this order):
-
-// SPDX-License-Identifier: MIT
+const WORKING_EXAMPLE = `// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
+import "../src/Vault.sol";
 
-/* ============================================================
-                        TARGET CONTRACT
-   ============================================================ */
+contract Attacker {
+    Vault public immutable vault;
 
-import "../src/<ContractName>.sol";
+    constructor(address payable _vault) {
+        vault = Vault(payable(_vault));
+    }
 
-/* ============================================================
-                     ATTACKER / HELPER CONTRACTS
-   ============================================================ */
+    function attack() external payable {
+        vault.deposit{value: msg.value}();
+        vault.withdraw();
+    }
 
-// Interfaces, ReentrantAttacker-style contracts, etc.
+    receive() external payable {
+        if (address(vault).balance >= 1 ether) {
+            vault.withdraw();
+        }
+    }
 
-/* ============================================================
-                          TEST SUITE
-   ============================================================ */
+    fallback() external payable {}
+}
 
-contract <ContractName>Test is Test {
-    // setUp(), test*() functions using vm.prank, vm.deal, assertEq, etc.
+contract VaultTest is Test {
+    Vault public vault;
+    Attacker public attacker;
+    address public user = address(0x1);
+    address public thief = address(0x2);
+
+    function setUp() public {
+        vault = new Vault();
+        attacker = new Attacker(payable(address(vault)));
+        vm.deal(user, 10 ether);
+        vm.deal(address(attacker), 1 ether);
+    }
+
+    function testReentrancyDrain() public {
+        vm.prank(user);
+        vault.deposit{value: 5 ether}();
+        assertEq(address(vault).balance, 5 ether);
+
+        attacker.attack{value: 1 ether}();
+        assertLt(address(vault).balance, 5 ether, "Reentrancy drained funds");
+    }
+
+    function testUnauthorizedWithdraw() public {
+        vm.prank(user);
+        vault.deposit{value: 2 ether}();
+
+        vm.prank(thief);
+        vm.expectRevert();
+        vault.withdrawAll();
+    }
 }`;
 
-const ATTACK_SYSTEM_PROMPT = `You are an elite white-hat smart contract security researcher. Your task is to analyze Solidity contracts and write Foundry tests designed to break their core logic.
+const SYSTEM_PROMPT = `You are an elite white-hat smart contract security researcher writing Foundry tests.
 
-You must return ONLY valid Solidity code in a SINGLE file. Use this exact structure:
-${SINGLE_FILE_STRUCTURE}
+Return ONLY valid Solidity code. No markdown, no code fences, no explanations. Start with "// SPDX-License-Identifier: MIT".
 
-Rules:
-1. Put the target contract import under "TARGET CONTRACT", attacker/helper contracts (interfaces, reentrancy attackers, etc.) under "ATTACKER / HELPER CONTRACTS", and the test contract under "TEST SUITE".
-2. Use Foundry's Test.sol: vm.prank, vm.deal, assertEq, assertTrue, assertLt, etc.
-3. No markdown, no code fences, no explanations. Start with "// SPDX-License-Identifier: MIT".`;
+CRITICAL RULES — violations will not compile:
+- The ONLY "../src/" import allowed is the target contract. ALL helper/attacker contracts MUST be defined INLINE.
+- Use "address payable" for constructor params that get cast to contract types: constructor(address payable _x)
+- When casting address to a contract type, wrap in payable(): MyContract(payable(addr))
+- Attacker contracts that receive ETH MUST have BOTH: receive() external payable {} AND fallback() external payable {}
+- receive() and fallback() have NO "function" keyword. Write: receive() external payable {} NOT function receive() ...
+- Do NOT use inline assembly (assembly { ... }) — use Solidity high-level calls instead.
+- Do NOT shadow state variables with function parameter names.
+- Use address(0x1), address(0x2), etc. for test addresses. Do NOT use makeAddr() in helper/attacker contracts.
+- IMPORTANT: The AVAILABLE FUNCTIONS listed in the prompt belong to the TARGET contract. Call them on the TARGET instance (e.g. target.deposit()), NOT on the attacker. The attacker contract only has functions YOU define inline.
+- ONLY call functions that exist in the AVAILABLE FUNCTIONS list. Do NOT invent function names like withdrawAll() if only withdraw(uint256) exists.
 
-const TARGETED_ATTACK_SYSTEM_PROMPT = `You are an elite white-hat smart contract security researcher. You are given a security audit report with specific vulnerabilities and exploit paths. Your task is to write a Foundry test file that attempts to exploit those findings.
+WORKING EXAMPLE (follow this pattern exactly):
+${WORKING_EXAMPLE}`;
 
-You must return ONLY valid Solidity code in a SINGLE file. Use this exact structure:
-${SINGLE_FILE_STRUCTURE}
+/** Extract function/event signatures from Solidity source for the AI. */
+function extractSignatures(src: string): string {
+  const lines = src.split('\n');
+  const sigs: string[] = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (/^function\s+\w+/.test(trimmed) || /^event\s+\w+/.test(trimmed) ||
+        /^modifier\s+\w+/.test(trimmed) || /^constructor\s*\(/.test(trimmed) ||
+        /^receive\(\)/.test(trimmed) || /^fallback\(\)/.test(trimmed)) {
+      const sig = trimmed.replace(/\{.*$/, '').trim();
+      sigs.push('  ' + sig);
+    }
+  }
+  return sigs.length > 0 ? sigs.join('\n') : '  (no public functions found)';
+}
 
-Rules:
-1. Replace <ContractName> with the actual contract name from the report.
-2. Put the target import under "TARGET CONTRACT", any attacker/helper contracts (e.g. ReentrantAttacker, interfaces) under "ATTACKER / HELPER CONTRACTS", and the main test contract (extending Test) under "TEST SUITE".
-3. Target the reported vulnerabilities; use vm.prank, vm.deal, assertEq, assertTrue, assertLt as needed.
-4. No markdown, no code fences. Start with "// SPDX-License-Identifier: MIT".`;
-
-/**
- * Generate a Foundry invariant test contract to attack the given Solidity code.
- * @param contractSource - The Solidity contract source code to attack
- * @returns Foundry test contract source code
- */
 export async function generateAttack(contractSource: string): Promise<string> {
-  const prompt = `Analyze this Solidity contract and write a complete Foundry test file designed to break its core logic:
+  // Template path: JSON plan -> validated Solidity (much more reliable)
+  try {
+    const templateResult = await generateTestFromTemplate(contractSource);
+    if (templateResult) {
+      console.log('[AttackGenerator] Template-based generation succeeded');
+      return templateResult;
+    }
+  } catch (e) {
+    console.warn('[AttackGenerator] Template path failed, falling back to raw:', (e as Error).message);
+  }
 
+  // Fallback: raw Solidity generation (legacy)
+  const contractName = contractSource.match(/contract\s+(\w+)/)?.[1] ?? 'Target';
+  const signatures = extractSignatures(contractSource);
+
+  const prompt = `Write a Foundry test to exploit this contract. Follow the WORKING EXAMPLE pattern exactly.
+
+Target contract "${contractName}":
 \`\`\`solidity
 ${contractSource}
 \`\`\`
 
-Output a SINGLE Solidity file with:
-1. SPDX + pragma ^0.8.20 and import "forge-std/Test.sol"
-2. A "TARGET CONTRACT" section with import "../src/<ContractName>.sol"
-3. An "ATTACKER / HELPER CONTRACTS" section (interfaces, attacker contracts like reentrancy helpers)
-4. A "TEST SUITE" section: one contract <ContractName>Test is Test { setUp(); test*(); }
+AVAILABLE FUNCTIONS (use ONLY these — do NOT call functions that aren't listed):
+${signatures}
 
-Use the exact comment headers shown in the system prompt. Return ONLY the Solidity code, no markdown.`;
+Requirements:
+1. Start with: // SPDX-License-Identifier: MIT, pragma solidity ^0.8.20;, import "forge-std/Test.sol";
+2. Import ONLY "../src/${contractName}.sol" — no other ../src/ imports
+3. Define attacker/helper contracts INLINE (not imported)
+4. One test contract: ${contractName}Test is Test { setUp(); test*(); }
+5. Use address payable in constructors, payable() for casts, receive() + fallback() on attackers
+6. Return ONLY the Solidity code.`;
 
-  if (!is0GAvailable()) {
-    return generateMockAttackTest(contractSource);
-  }
+  if (!is0GAvailable()) return generateMockAttackTest(contractSource);
 
   try {
-    const testCode = await call0GAI(prompt, ATTACK_SYSTEM_PROMPT);
+    const testCode = await call0GAI(prompt, SYSTEM_PROMPT);
     return extractSolidityCode(testCode);
   } catch (e) {
     console.error('[AttackGenerator] Failed to generate attack:', e);
@@ -86,18 +147,22 @@ Use the exact comment headers shown in the system prompt. Return ONLY the Solidi
   }
 }
 
-/**
- * Generate Foundry attack tests using the audit report so tests target specific vulnerabilities and exploit paths.
- * This makes the generated tests "malicious" in the sense they try to break the contract along the reported vectors.
- *
- * @param contractSource - The Solidity contract source
- * @param report - ProphetReport from analyze() (vulnerabilities, exploit_paths)
- * @returns Foundry test contract source code
- */
 export async function generateAttackFromReport(
   contractSource: string,
   report: ProphetReport
 ): Promise<string> {
+  // Template path: JSON plan -> validated Solidity (much more reliable)
+  try {
+    const templateResult = await generateTestFromTemplate(contractSource, report);
+    if (templateResult) {
+      console.log('[AttackGenerator] Template-based generation (from report) succeeded');
+      return templateResult;
+    }
+  } catch (e) {
+    console.warn('[AttackGenerator] Template path failed, falling back to raw:', (e as Error).message);
+  }
+
+  // Fallback: raw Solidity generation (legacy)
   const vulnSummary =
     report.vulnerabilities.length > 0
       ? report.vulnerabilities
@@ -117,35 +182,37 @@ export async function generateAttackFromReport(
           .join('\n')
       : 'None listed.';
 
-  const prompt = `Target contract (analyzed):
+  const signatures = extractSignatures(contractSource);
 
+  const prompt = `Write a Foundry test to exploit this audited contract. Follow the WORKING EXAMPLE pattern exactly.
+
+Target contract "${report.contract_name}":
 \`\`\`solidity
 ${contractSource}
 \`\`\`
 
-Audit findings to target:
+AVAILABLE FUNCTIONS (use ONLY these — do NOT call functions that aren't listed):
+${signatures}
+
+Audit findings to exploit:
 Vulnerabilities:
 ${vulnSummary}
 
 Exploit paths:
 ${exploitSummary}
 
-Write ONE Solidity file that exploits these findings. Use contract name "${report.contract_name}" and import from "../src/${report.contract_name}.sol".
+Requirements:
+1. Start with: // SPDX-License-Identifier: MIT, pragma solidity ^0.8.20;, import "forge-std/Test.sol";
+2. Import ONLY "../src/${report.contract_name}.sol" — no other ../src/ imports
+3. Define attacker/helper contracts INLINE (not imported)
+4. One test contract: ${report.contract_name}Test is Test { setUp(); test*(); }
+5. Use address payable in constructors, payable() for casts, receive() + fallback() on attackers
+6. Return ONLY the Solidity code.`;
 
-Structure (required):
-1. SPDX + pragma ^0.8.20 + import "forge-std/Test.sol"
-2. Section "TARGET CONTRACT" with: import "../src/${report.contract_name}.sol";
-3. Section "ATTACKER / HELPER CONTRACTS" with interfaces and attacker contracts (e.g. ReentrantAttacker)
-4. Section "TEST SUITE" with: contract ${report.contract_name}Test is Test { setUp(); test*(); }
-
-Use the exact comment block headers (e.g. /* ===== TARGET CONTRACT ===== */). Return ONLY the Solidity code, no markdown.`;
-
-  if (!is0GAvailable()) {
-    return generateMockAttackTest(contractSource, report.contract_name);
-  }
+  if (!is0GAvailable()) return generateMockAttackTest(contractSource, report.contract_name);
 
   try {
-    const testCode = await call0GAI(prompt, TARGETED_ATTACK_SYSTEM_PROMPT);
+    const testCode = await call0GAI(prompt, SYSTEM_PROMPT);
     return extractSolidityCode(testCode);
   } catch (e) {
     console.error('[AttackGenerator] Failed to generate attack from report:', e);
@@ -153,34 +220,17 @@ Use the exact comment block headers (e.g. /* ===== TARGET CONTRACT ===== */). Re
   }
 }
 
-/**
- * Extract Solidity code from AI response (removes markdown, code fences, etc.)
- */
 function extractSolidityCode(response: string): string {
-  // Remove markdown code fences
   let code = response.replace(/```solidity?\n?/g, '').replace(/```\n?/g, '');
-  
-  // Remove leading/trailing whitespace
   code = code.trim();
-  
-  // If it starts with "pragma" or "// SPDX", it's likely valid Solidity
-  if (code.startsWith('pragma') || code.startsWith('// SPDX')) {
-    return code;
-  }
-  
-  // Try to find Solidity code block
-  const match = code.match(/(pragma solidity[\s\S]*)/);
-  if (match) {
-    return match[1].trim();
-  }
-  
+  if (code.startsWith('pragma') || code.startsWith('// SPDX')) return code;
+  const match = code.match(/(\/\/\s*SPDX[\s\S]*)/);
+  if (match) return match[1].trim();
+  const pragmaMatch = code.match(/(pragma solidity[\s\S]*)/);
+  if (pragmaMatch) return pragmaMatch[1].trim();
   return code;
 }
 
-/**
- * Generate a mock Foundry test for development (when 0G unavailable).
- * Uses the same single-file structure: target, attacker/helpers, test suite.
- */
 function generateMockAttackTest(
   contractSource: string,
   contractNameOverride?: string
@@ -193,22 +243,7 @@ function generateMockAttackTest(
 pragma solidity ^0.8.20;
 
 import "forge-std/Test.sol";
-
-/* ============================================================
-                        TARGET CONTRACT
-   ============================================================ */
-
 import "../src/${contractName}.sol";
-
-/* ============================================================
-                     ATTACKER / HELPER CONTRACTS
-   ============================================================ */
-
-// Add interfaces and attacker contracts here when targeting specific vulns
-
-/* ============================================================
-                          TEST SUITE
-   ============================================================ */
 
 contract ${contractName}Test is Test {
     ${contractName} public target;

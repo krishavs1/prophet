@@ -14,6 +14,7 @@ import { spawn, ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import { call0GAI, is0GAvailable } from './0gService.js';
 
 const DOCKER_IMAGE = process.env.FORGE_DOCKER_IMAGE || 'prophet-forge';
 const TIMEOUT_MS = Number(process.env.FORGE_TIMEOUT_MS) || 120_000;
@@ -137,10 +138,42 @@ async function* runCommand(
 // Solidity source normalization helpers
 // ---------------------------------------------------------------------------
 
-function getContractFileFromTestImport(testCode: string): string | null {
-  const match = testCode.match(/["']\.\.\/src\/([^"']+\.sol)["']/);
-  return match ? match[1] : null;
+/**
+ * Determine the .sol filename for the source contract by inspecting the
+ * source code's own `contract Foo` declaration, then falling back to
+ * whatever the test code imports from ../src/.
+ */
+function resolveSourceFilename(
+  source: string,
+  testCode: string,
+  contractName: string
+): string {
+  const srcMatch = source.match(/\bcontract\s+(\w+)/);
+  if (srcMatch) return `${srcMatch[1]}.sol`;
+
+  const testImport = testCode.match(/["']\.\.\/src\/([^"']+\.sol)["']/);
+  if (testImport) return testImport[1];
+
+  return `${contractName}.sol`;
 }
+
+/** Collect every `../src/X.sol` filename imported by the code. */
+function getAllSrcImports(code: string): string[] {
+  const re = /["']\.\.\/src\/([^"']+\.sol)["']/g;
+  const files = new Set<string>();
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(code)) !== null) files.add(m[1]);
+  return [...files];
+}
+
+/** Rewrite `../src/X.sol` → `./X.sol` (for files that live inside src/). */
+function fixRelativeSrcImports(code: string): string {
+  return code.replace(
+    /(import\s+)(["'])\.\.\/src\//g,
+    '$1$2./'
+  );
+}
+
 
 function ensureForgeStdTestImport(testCode: string): string {
   const usesTest = /\b(is|:)\s+Test\b/.test(testCode);
@@ -153,18 +186,57 @@ function ensureForgeStdTestImport(testCode: string): string {
   return insert + testCode;
 }
 
-function ensureClosingBraceBeforeSecondContract(code: string): string {
-  const secondContractRegex = /\n\s*\bcontract\s+\w+/g;
-  const first = secondContractRegex.exec(code);
-  const second = secondContractRegex.exec(code);
-  if (!first || !second) return code;
-  const idx = second.index;
-  const before = code.slice(0, idx);
-  const open = (before.match(/{/g) ?? []).length;
-  const close = (before.match(/}/g) ?? []).length;
-  if (open <= close) return code;
-  const missing = open - close;
-  return code.slice(0, idx) + '}\n'.repeat(missing) + code.slice(idx);
+/**
+ * Fix common Solidity issues the AI generates:
+ *  1. constructor(address _x) → constructor(address payable _x)
+ *     Prevents "Explicit type conversion not allowed from non-payable address"
+ *  2. Add receive() if contract has fallback() payable but no receive()
+ */
+function fixCommonSolidityIssues(code: string): string {
+  let f = code;
+
+  // constructor(address _x) → constructor(address payable _x)
+  f = f.replace(/constructor\(\s*address\s+(_\w+)/g, 'constructor(address payable $1');
+  f = f.replace(/,\s*address\s+(_\w+)\s*\)/g, ', address payable $1)');
+
+  // "function receive()" → remove from interfaces, fix keyword in contracts
+  f = f.replace(/function\s+receive\(\)\s+external\s+payable\s*;/g, '');
+  f = f.replace(/function\s+(receive\(\)\s+external\s+payable)/g, '$1');
+  f = f.replace(/function\s+(fallback\(\)\s+external\s+payable)/g, '$1');
+
+  // Deduplicate consecutive receive() bodies
+  f = f.replace(
+    /(receive\(\)\s+external\s+payable\s*\{[^}]*\}\s*\n\s*)(receive\(\)\s+external\s+payable\s*\{[^}]*\})/g,
+    '$1'
+  );
+
+  // makeAddr() is only available inside Test contracts — replace with
+  // a portable equivalent that works everywhere
+  f = f.replace(
+    /makeAddr\(\s*"([^"]+)"\s*\)/g,
+    'address(uint160(uint256(keccak256(abi.encodePacked("$1")))))'
+  );
+
+  return f;
+}
+
+/** Ensure the file's overall brace count is balanced. Trim trailing extras. */
+function balanceBraces(code: string): string {
+  const open = (code.match(/{/g) ?? []).length;
+  const close = (code.match(/}/g) ?? []).length;
+  if (close > open) {
+    // Remove excess closing braces from the end
+    let trimmed = code;
+    for (let i = 0; i < close - open; i++) {
+      trimmed = trimmed.replace(/\}\s*$/, '');
+    }
+    return trimmed;
+  }
+  if (open > close) {
+    // Add missing closing braces at the end
+    return code + '\n' + '}\n'.repeat(open - close);
+  }
+  return code;
 }
 
 // ---------------------------------------------------------------------------
@@ -179,17 +251,64 @@ function writeTempProject(
 ): { contractFile: string } {
   const srcDir = path.join(tmpDir, 'src');
   const testDir = path.join(tmpDir, 'test');
+  const scriptDir = path.join(tmpDir, 'script');
   fs.mkdirSync(srcDir, { recursive: true });
   fs.mkdirSync(testDir, { recursive: true });
+  fs.mkdirSync(scriptDir, { recursive: true });
 
   fs.writeFileSync(path.join(tmpDir, 'foundry.toml'), FOUNDRY_TOML);
 
-  const contractFile =
-    getContractFileFromTestImport(testCode) ?? `${contractName}.sol`;
-  fs.writeFileSync(path.join(srcDir, contractFile), source);
+  // --- source file ---
+  const contractFile = resolveSourceFilename(source, testCode, contractName);
+  // Strip ../src/ imports from the source: they reference other src/ files
+  // we don't have as separate files.  If the referenced contract is defined
+  // in this same source, the import is redundant.  Rewriting to ./ would
+  // create circular proxy deps, so just remove them.
+  const cleanedSource = source.replace(
+    /import\s+["']\.\.\/src\/[^"']+\.sol["']\s*;\s*\n?/g,
+    ''
+  );
+  fs.writeFileSync(path.join(srcDir, contractFile), cleanedSource);
+  console.log(`[writeTempProject] source → src/${contractFile}`);
 
-  let normalizedTest = ensureForgeStdTestImport(testCode);
-  normalizedTest = ensureClosingBraceBeforeSecondContract(normalizedTest);
+  // --- test file ---
+  // Step 1: strip ALL ../src/ imports (they may point to wrong files or
+  //         cause "already declared" when the test redefines a source contract)
+  let normalizedTest = testCode.replace(
+    /import\s+["']\.\.\/src\/[^"']+\.sol["']\s*;\s*\n?/g,
+    ''
+  );
+  console.log(`[writeTempProject] stripped ../src/ imports from test`);
+
+  // Step 2: check if adding the source import would cause a duplicate
+  const sourceContracts = new Set(
+    [...source.matchAll(/\bcontract\s+(\w+)/g)].map((m) => m[1])
+  );
+  const testContracts = new Set(
+    [...normalizedTest.matchAll(/\bcontract\s+(\w+)/g)].map((m) => m[1])
+  );
+  const hasConflict = [...sourceContracts].some((c) => testContracts.has(c));
+
+  if (!hasConflict) {
+    // Safe to import — no duplicate declarations
+    const pragmaEnd = normalizedTest.indexOf(';');
+    if (pragmaEnd !== -1) {
+      normalizedTest =
+        normalizedTest.slice(0, pragmaEnd + 1) +
+        `\nimport "../src/${contractFile}";\n` +
+        normalizedTest.slice(pragmaEnd + 1);
+    }
+    console.log(`[writeTempProject] added import ../src/${contractFile} to test`);
+  } else {
+    console.log(
+      `[writeTempProject] skipped source import (conflict: ${[...sourceContracts].filter((c) => testContracts.has(c))})`
+    );
+  }
+
+  normalizedTest = ensureForgeStdTestImport(normalizedTest);
+  normalizedTest = fixCommonSolidityIssues(normalizedTest);
+  normalizedTest = balanceBraces(normalizedTest);
+
   fs.writeFileSync(
     path.join(testDir, `${contractName}.t.sol`),
     normalizedTest
@@ -199,29 +318,187 @@ function writeTempProject(
 }
 
 // ---------------------------------------------------------------------------
-// Docker-sandboxed execution
+// Docker helpers
 // ---------------------------------------------------------------------------
 
-async function* runDockerFoundry(
-  tmpDir: string
-): AsyncGenerator<StreamChunk, void, undefined> {
-  yield { chunk: `[prophet] Running in Docker sandbox (${DOCKER_IMAGE})...\n` };
-
-  const args = [
-    'run',
-    '--rm',
+function dockerArgs(tmpDir: string, cmd: string): string[] {
+  return [
+    'run', '--rm',
     '--network', 'none',
     '--memory', '512m',
     '--cpus', '1',
     '--tmpfs', '/tmp:size=100m',
     '-v', `${path.join(tmpDir, 'src')}:/project/src:ro`,
     '-v', `${path.join(tmpDir, 'test')}:/project/test:ro`,
+    '-v', `${path.join(tmpDir, 'script')}:/project/script:ro`,
     '-v', `${path.join(tmpDir, 'foundry.toml')}:/project/foundry.toml:ro`,
     DOCKER_IMAGE,
-    'forge build && forge test -vvv',
+    cmd,
   ];
+}
 
-  for await (const msg of runCommand('docker', args, tmpDir, TIMEOUT_MS)) {
+/** Run a Docker command and collect ALL output (non-streaming). */
+async function collectOutput(
+  cmd: string,
+  args: string[],
+  cwd: string,
+  timeoutMs?: number
+): Promise<{ output: string; exitCode: number }> {
+  let output = '';
+  let exitCode = -1;
+  for await (const msg of runCommand(cmd, args, cwd, timeoutMs)) {
+    output += msg.chunk;
+    if (msg.done) exitCode = msg.exitCode ?? -1;
+  }
+  return { output, exitCode };
+}
+
+/** Ask the AI to fix Solidity compiler errors in the test code. */
+async function aiFixTestCode(
+  testCode: string,
+  compilerErrors: string,
+  sourceCode: string
+): Promise<string | null> {
+  if (!is0GAvailable()) return null;
+  // Extract function signatures so the AI knows what's actually callable
+  const sigLines = sourceCode.split('\n')
+    .map((l) => l.trim())
+    .filter((l) => /^(function|event|modifier|constructor|receive|fallback)\b/.test(l))
+    .map((l) => '  ' + l.replace(/\{.*$/, '').trim())
+    .join('\n') || '  (none found)';
+
+  const prompt = `Fix the Solidity compiler errors in this Foundry test file.
+
+COMPILER ERRORS:
+${compilerErrors.slice(0, 2000)}
+
+SOURCE CONTRACT FUNCTIONS (use ONLY these — do NOT call functions that don't exist):
+${sigLines}
+
+SOURCE CONTRACT (read-only, in src/):
+\`\`\`solidity
+${sourceCode.slice(0, 3000)}
+\`\`\`
+
+TEST FILE (fix this):
+\`\`\`solidity
+${testCode}
+\`\`\`
+
+Return ONLY the fixed Solidity test file. No markdown, no explanations. Start with "// SPDX-License-Identifier: MIT".`;
+
+  try {
+    const fixed = await call0GAI(prompt,
+      `You are a Solidity compiler error fixer. Return ONLY valid Solidity code. No markdown fences. No explanations.
+Key rules:
+- Use "address payable" for constructor params cast to contracts.
+- receive() and fallback() have NO "function" keyword.
+- makeAddr() only works inside contracts extending Test — outside use address(0x1) etc.
+- Do NOT use inline assembly. Do NOT shadow state variables with parameter names.
+- "Member X not found" means you're calling a function on the WRONG contract. Check the SOURCE CONTRACT FUNCTIONS list — those belong to the TARGET contract instance, not the attacker.
+- ONLY call functions that appear in the SOURCE CONTRACT FUNCTIONS list. Do NOT invent function names.`
+    );
+    let code = fixed.replace(/```solidity?\n?/g, '').replace(/```\n?/g, '').trim();
+    if (code.includes('pragma solidity') || code.includes('// SPDX')) return code;
+    const m = code.match(/(\/\/\s*SPDX[\s\S]*)/);
+    return m ? m[1].trim() : null;
+  } catch (e) {
+    console.error('[aiFixTestCode] AI fix failed:', e);
+    return null;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Docker-sandboxed execution (with build-check-fix loop)
+// ---------------------------------------------------------------------------
+
+const MAX_FIX_ATTEMPTS = 3;
+
+async function* runDockerFoundry(
+  tmpDir: string,
+  source: string,
+  contractName: string
+): AsyncGenerator<StreamChunk, void, undefined> {
+  yield { chunk: `[prophet] Running in Docker sandbox (${DOCKER_IMAGE})...\n` };
+
+  for (let attempt = 0; attempt <= MAX_FIX_ATTEMPTS; attempt++) {
+    // Try forge build first
+    const buildResult = await collectOutput(
+      'docker',
+      dockerArgs(tmpDir, 'forge build'),
+      tmpDir,
+      TIMEOUT_MS
+    );
+
+    if (buildResult.exitCode === 0) {
+      // Build succeeded — run tests
+      yield { chunk: `[prophet] Build OK, running tests...\n` };
+      for await (const msg of runCommand(
+        'docker',
+        dockerArgs(tmpDir, 'forge test -vvv'),
+        tmpDir,
+        TIMEOUT_MS
+      )) {
+        yield msg;
+      }
+      return;
+    }
+
+    // Build failed
+    if (attempt < MAX_FIX_ATTEMPTS) {
+      yield { chunk: `[prophet] Build failed (attempt ${attempt + 1}/${MAX_FIX_ATTEMPTS + 1}), asking AI to fix...\n` };
+
+      const testFile = fs.readdirSync(path.join(tmpDir, 'test')).find((f) => f.endsWith('.sol'));
+      if (!testFile) break;
+      const testPath = path.join(tmpDir, 'test', testFile);
+      const currentTest = fs.readFileSync(testPath, 'utf-8');
+
+      const fixedTest = await aiFixTestCode(currentTest, buildResult.output, source);
+      if (!fixedTest) {
+        yield { chunk: `[prophet] AI fix unavailable, showing original errors.\n` };
+        break;
+      }
+
+      // Apply the same normalizations to the AI-fixed code
+      let processed = fixedTest.replace(
+        /import\s+["']\.\.\/src\/[^"']+\.sol["']\s*;\s*\n?/g, ''
+      );
+      const srcContracts = new Set(
+        [...source.matchAll(/\bcontract\s+(\w+)/g)].map((m) => m[1])
+      );
+      const fixedContracts = new Set(
+        [...processed.matchAll(/\bcontract\s+(\w+)/g)].map((m) => m[1])
+      );
+      const contractFile = resolveSourceFilename(source, '', contractName);
+      if (![...srcContracts].some((c) => fixedContracts.has(c))) {
+        const pe = processed.indexOf(';');
+        if (pe !== -1) {
+          processed = processed.slice(0, pe + 1) +
+            `\nimport "../src/${contractFile}";\n` +
+            processed.slice(pe + 1);
+        }
+      }
+      processed = fixCommonSolidityIssues(processed);
+      processed = ensureForgeStdTestImport(processed);
+      processed = balanceBraces(processed);
+      fs.writeFileSync(testPath, processed);
+      console.log(`[runDockerFoundry] rewrote test after AI fix (attempt ${attempt + 1})`);
+      continue;
+    }
+
+    // All retries exhausted — show the build errors
+    yield { chunk: buildResult.output };
+    yield { chunk: '\n', done: true, exitCode: buildResult.exitCode };
+    return;
+  }
+
+  // Fallback: run build+test to show whatever errors remain
+  for await (const msg of runCommand(
+    'docker',
+    dockerArgs(tmpDir, 'forge build && forge test -vvv'),
+    tmpDir,
+    TIMEOUT_MS
+  )) {
     yield msg;
   }
 }
@@ -295,7 +572,7 @@ export async function* runFoundryTests(
     yield { chunk: `[prophet] Temp project: ${tmpDir}\n` };
 
     if (useDockerSandbox()) {
-      yield* runDockerFoundry(tmpDir);
+      yield* runDockerFoundry(tmpDir, source, contractName);
     } else {
       yield* runLocalFoundry(tmpDir);
     }

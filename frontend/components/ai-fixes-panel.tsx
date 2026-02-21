@@ -28,6 +28,7 @@ export function AiFixesPanel({ onBack }: { onBack: () => void }): JSX.Element {
     vulnerabilities,
     fixSuggestions,
     riskScore,
+    terminalLogs,
     setPatchedCode,
     applyPatch,
     setShowFixesView,
@@ -44,10 +45,14 @@ export function AiFixesPanel({ onBack }: { onBack: () => void }): JSX.Element {
     const agentUrl = process.env.NEXT_PUBLIC_AGENT_URL ?? "http://localhost:3001"
     try {
       const report = buildReportForAgent(usePipelineStore.getState())
+      const simulationTrace = terminalLogs
+        .map((l) => l.text)
+        .join("")
+        .slice(-3000)
       const res = await fetch(`${agentUrl}/generate-fix`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source: originalCode, report }),
+        body: JSON.stringify({ source: originalCode, report, simulationTrace }),
       })
       if (!res.ok) {
         const errText = await res.text()

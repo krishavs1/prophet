@@ -159,8 +159,8 @@ const server = http.createServer(async (req, res) => {
     let body = '';
     for await (const chunk of req) body += chunk;
     try {
-      const parsed = JSON.parse(body) as { source?: string; report?: Partial<ProphetReport> };
-      const { source, report } = parsed;
+      const parsed = JSON.parse(body) as { source?: string; report?: Partial<ProphetReport>; simulationTrace?: string };
+      const { source, report, simulationTrace } = parsed;
       if (typeof source !== 'string' || !report) {
         res.writeHead(400);
         res.end(JSON.stringify({ error: 'Missing or invalid "source" or "report"' }));
@@ -178,7 +178,7 @@ const server = http.createServer(async (req, res) => {
         fix_suggestions: report.fix_suggestions ?? [],
         meta: report.meta ?? { generated_at: '', generator: '', inference_backend: 'local', version: '' },
       };
-      const patchedCode = await generateFixFromReport(source, fullReport);
+      const patchedCode = await generateFixFromReport(source, fullReport, simulationTrace);
       res.writeHead(200);
       res.end(JSON.stringify({ patchedCode }));
     } catch (e) {

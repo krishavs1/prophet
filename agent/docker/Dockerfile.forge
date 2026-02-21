@@ -15,7 +15,7 @@ RUN printf '[profile.default]\nsrc = "src"\nout = "out"\nlibs = ["lib"]\nsolc = 
 RUN forge build
 
 # Clear user-facing dirs; agent bind-mounts its own src/ and test/ at runtime
-RUN rm -rf src/* test/* out/* cache/*
+RUN rm -rf src/* test/* script/* out/* cache/*
 
 ENTRYPOINT ["sh", "-c"]
 CMD ["forge build && forge test -vvv"]
