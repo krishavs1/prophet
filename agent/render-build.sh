@@ -14,9 +14,11 @@ export PATH="$HOME/.foundry/bin:$PATH"
 foundryup
 forge --version
 
-echo "==> Persisting Foundry path for runtime"
-echo "FORGE_PATH=$HOME/.foundry/bin/forge" >> "$HOME/.profile"
-echo "Foundry installed at: $HOME/.foundry/bin/forge"
+FORGE_RESOLVED=$(which forge)
+echo "==> Foundry installed at: $FORGE_RESOLVED"
+echo "FORGE_PATH=$FORGE_RESOLVED" > /opt/render/project/src/agent/.forge-env
+echo "FOUNDRY_DIR=$(dirname $FORGE_RESOLVED)" >> /opt/render/project/src/agent/.forge-env
+cat /opt/render/project/src/agent/.forge-env
 
 echo "==> Patching 0G SDK (npm v0.3.3 has stale flow contract ABI)"
 git clone --depth 1 https://github.com/0gfoundation/0g-ts-sdk.git /tmp/0g-sdk-patch
