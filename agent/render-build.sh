@@ -8,17 +8,17 @@ pnpm install --frozen-lockfile
 echo "==> Building TypeScript"
 pnpm run build
 
-echo "==> Installing Foundry"
+echo "==> Installing Foundry into project directory"
+export FOUNDRY_DIR="$(pwd)/.foundry"
+mkdir -p "$FOUNDRY_DIR"
 curl -L https://foundry.paradigm.xyz | bash
 export PATH="$HOME/.foundry/bin:$PATH"
-foundryup
-forge --version
-
-FORGE_RESOLVED=$(which forge)
-echo "==> Foundry installed at: $FORGE_RESOLVED"
-echo "FORGE_PATH=$FORGE_RESOLVED" > /opt/render/project/src/agent/.forge-env
-echo "FOUNDRY_DIR=$(dirname $FORGE_RESOLVED)" >> /opt/render/project/src/agent/.forge-env
-cat /opt/render/project/src/agent/.forge-env
+FOUNDRY_INSTALL_DIR="$FOUNDRY_DIR" foundryup
+cp -f "$HOME/.foundry/bin/forge" "$FOUNDRY_DIR/forge" 2>/dev/null || true
+cp -f "$HOME/.foundry/bin/cast" "$FOUNDRY_DIR/cast" 2>/dev/null || true
+chmod +x "$FOUNDRY_DIR/forge" "$FOUNDRY_DIR/cast"
+"$FOUNDRY_DIR/forge" --version
+echo "==> Foundry installed at: $FOUNDRY_DIR/forge"
 
 echo "==> Patching 0G SDK (npm v0.3.3 has stale flow contract ABI)"
 git clone --depth 1 https://github.com/0gfoundation/0g-ts-sdk.git /tmp/0g-sdk-patch
