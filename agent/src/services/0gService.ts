@@ -157,6 +157,14 @@ export async function call0GAI(prompt: string, systemPrompt?: string): Promise<s
     }
 
     const data = await response.json();
+    const chatID =
+      response.headers.get('ZG-Res-Key') ??
+      response.headers.get('zg-res-key') ??
+      data?.id ??
+      data?.chatID;
+    if (chatID) {
+      console.log('[0G] Inference response ID (compute hash):', chatID);
+    }
     return data.choices?.[0]?.message?.content || JSON.stringify(data);
   } catch (e) {
     const err = e as Error & { cause?: { code?: string } };
