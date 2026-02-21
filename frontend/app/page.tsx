@@ -4,6 +4,8 @@ import { useEffect, useState } from "react"
 import Link from "next/link"
 import { Shield, ArrowRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { WalletAuthButton } from "@/components/auth/WalletAuthButton"
+import { WalletGatedLaunchHeader, WalletGatedLaunch } from "@/components/auth/WalletGatedLaunch"
 
 /* ── Terminal data ── */
 const terminalLines = [
@@ -95,12 +97,8 @@ export default function HomePage() {
           >
             GitHub
           </Link>
-          <Link href="/analyze">
-            <Button className="group bg-accent text-accent-foreground hover:bg-accent/90">
-              Launch
-              <ArrowRight className="ml-1 size-3.5 transition group-hover:translate-x-0.5" />
-            </Button>
-          </Link>
+          <WalletAuthButton />
+          <WalletGatedLaunchHeader />
         </nav>
       </header>
 
@@ -124,15 +122,7 @@ export default function HomePage() {
             </p>
 
             <div className="mt-8 flex flex-wrap items-center gap-4">
-              <Link href="/analyze">
-                <Button
-                  size="lg"
-                  className="group bg-accent text-accent-foreground hover:bg-accent/90 font-mono uppercase tracking-wider text-xs h-11 px-8"
-                >
-                  Start Analysis
-                  <ArrowRight className="ml-2 size-4 transition group-hover:translate-x-0.5" />
-                </Button>
-              </Link>
+              <WalletGatedLaunch />
               <Link href="https://github.com/AaravM11/prophet" target="_blank" rel="noreferrer">
                 <Button
                   size="lg"

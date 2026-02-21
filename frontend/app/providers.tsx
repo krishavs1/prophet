@@ -1,47 +1,56 @@
 'use client'
 
-import { ReactNode, useEffect, useState } from 'react'
-import { WagmiProvider, createConfig, http } from 'wagmi'
-import { mainnet, sepolia } from 'wagmi/chains'
+import React, { ReactNode, useEffect, useState } from 'react'
+import { WagmiProvider } from 'wagmi'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit'
+import { getDefaultConfig, RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit'
 import '@rainbow-me/rainbowkit/styles.css'
-import { injected, walletConnect } from '@wagmi/connectors'
+import { mainnet, sepolia } from 'wagmi/chains'
 
 const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID ?? 'demo'
 
-// Build wagmi config with explicit connectors to avoid version mismatches
-const config = createConfig({
-  chains: [sepolia, mainnet],
-  transports: {
-    [sepolia.id]: http(),
-    [mainnet.id]: http(),
-  },
-  connectors: [
-    injected(),
-    walletConnect({
-      projectId,
-      showQrModal: true,
-    }),
-  ],
-  ssr: true,
+// Theme: match app (dark, accent #00ff41)
+const prophetTheme = darkTheme({
+  accentColor: '#00ff41',
+  accentColorForeground: '#0a0a0a',
+  borderRadius: 'small',
 })
+
+export const WalletReadyContext = React.createContext(false)
 
 export function Providers({ children }: { children: ReactNode }): JSX.Element {
   const [queryClient] = useState(() => new QueryClient())
+  const [config, setConfig] = useState<ReturnType<typeof getDefaultConfig> | null>(null)
 
-  // Avoid hydration mismatch for RainbowKit
-  const [mounted, setMounted] = useState(false)
-  useEffect(() => setMounted(true), [])
+  // Create config only on client to avoid localStorage/SSR errors
+  useEffect(() => {
+    setConfig(
+      getDefaultConfig({
+        appName: 'Prophet',
+        projectId,
+        chains: [sepolia, mainnet],
+        ssr: true,
+      })
+    )
+  }, [])
+
+  if (!config) {
+    return (
+      <WalletReadyContext.Provider value={false}>
+        {children}
+      </WalletReadyContext.Provider>
+    )
+  }
 
   return (
-    <WagmiProvider config={config}>
-      <QueryClientProvider client={queryClient}>
-        <RainbowKitProvider theme={darkTheme()} modalSize="compact">
-          {mounted ? children : null}
-        </RainbowKitProvider>
-      </QueryClientProvider>
-    </WagmiProvider>
+    <WalletReadyContext.Provider value={true}>
+      <WagmiProvider config={config}>
+        <QueryClientProvider client={queryClient}>
+          <RainbowKitProvider theme={prophetTheme} modalSize="compact">
+            {children}
+          </RainbowKitProvider>
+        </QueryClientProvider>
+      </WagmiProvider>
+    </WalletReadyContext.Provider>
   )
 }
-

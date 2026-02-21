@@ -2,17 +2,36 @@
 
 import { Shield } from "lucide-react"
 import Link from "next/link"
+import { useRouter } from "next/navigation"
+import { useEffect, useContext } from "react"
+import { useAccount } from "wagmi"
 import { PipelineStepper } from "@/components/pipeline-stepper"
 import { CodeEditor } from "@/components/code-editor"
 import { VulnerabilityReport } from "@/components/vulnerability-report"
 import { FuzzingTerminal } from "@/components/fuzzing-terminal"
 import { AiFixesPanel } from "@/components/ai-fixes-panel"
 import { Button } from "@/components/ui/button"
+import { WalletAuthButton } from "@/components/auth/WalletAuthButton"
+import { WalletReadyContext } from "@/app/providers"
 import { usePipelineStore } from "@/src/store/usePipelineStore"
 
-export default function AnalyzePage(): JSX.Element {
+function AnalyzePageContent(): JSX.Element {
+  const router = useRouter()
+  const { isConnected } = useAccount()
   const showFixesView = usePipelineStore((s) => s.showFixesView)
   const setShowFixesView = usePipelineStore((s) => s.setShowFixesView)
+
+  useEffect(() => {
+    if (!isConnected) router.replace("/")
+  }, [isConnected, router])
+
+  if (!isConnected) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <p className="font-mono text-sm text-muted-foreground">Redirecting…</p>
+      </div>
+    )
+  }
 
   if (showFixesView) {
     return (
@@ -43,6 +62,7 @@ export default function AnalyzePage(): JSX.Element {
           <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground">
             Foundry
           </span>
+          <WalletAuthButton />
           <Link href="/">
             <Button variant="ghost" size="sm" className="text-muted-foreground hover:text-foreground">
               Back
@@ -68,4 +88,17 @@ export default function AnalyzePage(): JSX.Element {
   )
 }
 
+export default function AnalyzePage(): JSX.Element {
+  const ready = useContext(WalletReadyContext)
+
+  if (!ready) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <p className="font-mono text-sm text-muted-foreground">Loading…</p>
+      </div>
+    )
+  }
+
+  return <AnalyzePageContent />
+}
 

@@ -117,7 +117,7 @@ export async function call0GAI(prompt: string, systemPrompt?: string): Promise<s
     }
 
     // Use first available LLM service
-    const llmService = services.find((s: any) => 
+    const llmService = services.find((s: any) =>
       s.model?.includes('chat') || s.model?.includes('instruct') || s.model?.includes('llm')
     ) || services[0];
 
@@ -125,7 +125,6 @@ export async function call0GAI(prompt: string, systemPrompt?: string): Promise<s
     const providerAddress = (llmService as any).providerAddress || (llmService as any).provider || (llmService as any)[0];
 
     // Acknowledge provider. SDK creates sub-account (transfer 1 OG from main) only if none exists.
-    // If you already transferred via CLI, no transfer is needed and this just succeeds.
     await brokerInstance.inference.acknowledgeProviderSigner(providerAddress);
 
     // Get service metadata and request headers
