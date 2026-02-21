@@ -367,6 +367,11 @@ const server = http.createServer(async (req, res) => {
         return;
       }
       const zgResult = await uploadAuditData(payload);
+      if (!zgResult) {
+        res.writeHead(500);
+        res.end(JSON.stringify({ error: '0G upload returned null' }));
+        return;
+      }
       updateAudit(id, {
         zgRootHash: zgResult.rootHash,
         zgTxHash: zgResult.txHash,
