@@ -330,7 +330,7 @@ contract Example {
 
   const runAnalysisRequest = async () => {
     startAnalysis()
-    const agentUrl = process.env.NEXT_PUBLIC_AGENT_URL ?? "http://localhost:3001"
+    const agentUrl = process.env.NEXT_PUBLIC_AGENT_URL ?? "https://prophet-7mcp.onrender.com"
     try {
       const res = await fetch(`${agentUrl}/analyze`, {
         method: "POST",

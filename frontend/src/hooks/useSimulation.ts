@@ -26,7 +26,7 @@ export function useSimulation() {
     if (hasStarted.current) return
     hasStarted.current = true
 
-    const agentUrl = process.env.NEXT_PUBLIC_AGENT_URL ?? "http://localhost:3001"
+    const agentUrl = process.env.NEXT_PUBLIC_AGENT_URL ?? "https://prophet-7mcp.onrender.com"
     const controller = new AbortController()
 
     async function run() {

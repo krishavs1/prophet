@@ -153,7 +153,7 @@ export function AiFixesPanel({ onBack }: { onBack: () => void }): JSX.Element {
   const handleGenerateFix = async (): Promise<void> => {
     setError(null)
     setIsGenerating(true)
-    const agentUrl = process.env.NEXT_PUBLIC_AGENT_URL ?? "http://localhost:3001"
+    const agentUrl = process.env.NEXT_PUBLIC_AGENT_URL ?? "https://prophet-7mcp.onrender.com"
     try {
       const report = buildReportForAgent(usePipelineStore.getState())
       const simulationTrace = terminalLogs

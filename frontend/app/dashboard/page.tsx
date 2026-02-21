@@ -70,7 +70,7 @@ function DashboardContent(): JSX.Element {
     if (!address) return
     setIsLoading(true)
     setError(null)
-    const agentUrl = process.env.NEXT_PUBLIC_AGENT_URL ?? "http://localhost:3001"
+    const agentUrl = process.env.NEXT_PUBLIC_AGENT_URL ?? "https://prophet-7mcp.onrender.com"
     try {
       const res = await fetch(`${agentUrl}/audits?wallet=${address}`)
       if (!res.ok) throw new Error(`${res.status}`)
@@ -89,7 +89,7 @@ function DashboardContent(): JSX.Element {
 
   const handleViewAudit = async (audit: AuditRecord) => {
     setLoadingAuditId(audit.id)
-    const agentUrl = process.env.NEXT_PUBLIC_AGENT_URL ?? "http://localhost:3001"
+    const agentUrl = process.env.NEXT_PUBLIC_AGENT_URL ?? "https://prophet-7mcp.onrender.com"
     try {
       const res = await fetch(`${agentUrl}/audit/${audit.id}`)
       if (!res.ok) throw new Error(`${res.status}`)
@@ -125,7 +125,7 @@ function DashboardContent(): JSX.Element {
   }
 
   const handleDeleteAudit = async (audit: AuditRecord) => {
-    const agentUrl = process.env.NEXT_PUBLIC_AGENT_URL ?? "http://localhost:3001"
+    const agentUrl = process.env.NEXT_PUBLIC_AGENT_URL ?? "https://prophet-7mcp.onrender.com"
     try {
       const res = await fetch(`${agentUrl}/audit/${audit.id}`, { method: "DELETE" })
       if (!res.ok) throw new Error(`${res.status}`)
@@ -138,7 +138,7 @@ function DashboardContent(): JSX.Element {
   const handleRetryUpload = async (audit: AuditRecord) => {
     setLoadingAuditId(audit.id)
     setError(null)
-    const agentUrl = process.env.NEXT_PUBLIC_AGENT_URL ?? "http://localhost:3001"
+    const agentUrl = process.env.NEXT_PUBLIC_AGENT_URL ?? "https://prophet-7mcp.onrender.com"
     try {
       const res = await fetch(`${agentUrl}/audit/${audit.id}/retry`, { method: "POST" })
       if (!res.ok) {

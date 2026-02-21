@@ -46,7 +46,7 @@ export default function FixesPage(): JSX.Element {
   const handleGenerateFix = async () => {
     setError(null)
     setIsGenerating(true)
-    const agentUrl = process.env.NEXT_PUBLIC_AGENT_URL ?? "http://localhost:3001"
+    const agentUrl = process.env.NEXT_PUBLIC_AGENT_URL ?? "https://prophet-7mcp.onrender.com"
     try {
       const report = buildReportForAgent(usePipelineStore.getState())
       const res = await fetch(`${agentUrl}/generate-fix`, {
