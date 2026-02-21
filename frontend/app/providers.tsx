@@ -28,7 +28,7 @@ export function Providers({ children }: { children: ReactNode }): JSX.Element {
       getDefaultConfig({
         appName: 'Prophet',
         projectId,
-        chains: [sepolia, mainnet],
+        chains: [mainnet, sepolia],
         ssr: true,
       })
     )
