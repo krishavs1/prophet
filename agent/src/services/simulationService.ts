@@ -242,6 +242,26 @@ function fixCommonSolidityIssues(code: string): string {
     'payable(address($1))'
   );
 
+  // Strip {value: ...} from non-constructor calls — often applied to non-payable functions.
+  // Keeps constructor{value: ...} intact. Removes e.g. target.withdraw{value: 1 ether}(...)
+  f = f.replace(
+    /(\.\w+)\{value:\s*[^}]+\}\s*\(/g,
+    '$1('
+  );
+
+  // Remove lines containing absurdly long hex literals (>42 chars = not an address)
+  // These are usually hallucinated bytecode the AI dumps into arguments.
+  f = f.split('\n').filter((line) => {
+    const hexMatch = line.match(/0x[0-9a-fA-F]{43,}/);
+    return !hexMatch;
+  }).join('\n');
+
+  // Remove any non-hex characters in address() literals: address(0xburn) → address(0)
+  f = f.replace(
+    /address\(0x[^)]*[^0-9a-fA-F)][^)]*\)/g,
+    'payable(address(0))'
+  );
+
   return f;
 }
 
@@ -439,9 +459,21 @@ Key rules:
 - All hex address literals must be valid hex: 0x followed by only [0-9a-fA-F] digits.`
     );
     let code = fixed.replace(/```solidity?\n?/g, '').replace(/```\n?/g, '').trim();
-    if (code.includes('pragma solidity') || code.includes('// SPDX')) return code;
-    const m = code.match(/(\/\/\s*SPDX[\s\S]*)/);
-    return m ? m[1].trim() : null;
+    if (!code.includes('pragma solidity') && !code.includes('// SPDX')) {
+      const m = code.match(/(\/\/\s*SPDX[\s\S]*)/);
+      code = m ? m[1].trim() : '';
+    }
+    if (!code) return null;
+    // Reject if AI returned garbage: contains huge hex blobs or is absurdly large
+    if (/0x[0-9a-fA-F]{80,}/.test(code)) {
+      console.warn('[aiFixTestCode] Rejected: contains bytecode blob');
+      return null;
+    }
+    if (code.length > testCode.length * 3) {
+      console.warn('[aiFixTestCode] Rejected: output is 3x larger than input');
+      return null;
+    }
+    return code;
   } catch (e) {
     console.error('[aiFixTestCode] AI fix failed:', e);
     return null;
