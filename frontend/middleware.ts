@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server'
 import { jwtVerify } from 'jose'
 
 const PROTECTED_PATHS: RegExp[] = [
-  /^\/dashboard(?:\/|$)/,
   /^\/projects(?:\/|$)/,
 ]
 

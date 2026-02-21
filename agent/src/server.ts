@@ -13,13 +13,16 @@ import { generatePatch, generateFixFromReport } from './services/patchGenerator.
 import { runFoundryTests } from './services/simulationService.js';
 import { compileSource } from './services/compileService.js';
 import { get0GAccountBalance } from './services/0gService.js';
+import { uploadAuditData, downloadAuditData, is0GStorageAvailable } from './services/0gStorageService.js';
+import { insertAudit, listAudits, getAudit, updateAudit, deleteAudit, savePayloadLocally, loadPayloadLocally } from './db.js';
+import type { AuditPayload } from './services/0gStorageService.js';
 
 const PORT = Number(process.env.PORT) || 3001;
 
 const server = http.createServer(async (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') {
@@ -28,7 +31,10 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
-  const path = (req.url ?? '').split('?')[0];
+  const fullUrl = req.url ?? '';
+  const path = fullUrl.split('?')[0];
+  const queryStr = fullUrl.split('?')[1] ?? '';
+  const query = Object.fromEntries(new URLSearchParams(queryStr));
   if (req.method === 'GET' && path === '/health') {
     res.writeHead(200);
     res.end(JSON.stringify({ status: 'ok', service: 'prophet-agent' }));
@@ -238,6 +244,176 @@ const server = http.createServer(async (req, res) => {
     return;
   }
 
+  // ── Audit persistence (0G Storage) ──
+
+  if (req.method === 'POST' && path === '/audit/save') {
+    let body = '';
+    for await (const chunk of req) body += chunk;
+    try {
+      const parsed = JSON.parse(body) as {
+        walletAddress?: string;
+        contractSource?: string;
+        contractName?: string;
+        report?: ProphetReport;
+        testCode?: string;
+        simulationLogs?: AuditPayload['simulationLogs'];
+        patchedCode?: string;
+        deploymentTx?: string;
+      };
+      const { walletAddress, contractSource, contractName, report, testCode, simulationLogs, patchedCode, deploymentTx } = parsed;
+      if (!walletAddress || !contractSource || !report) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: 'walletAddress, contractSource, and report are required' }));
+        return;
+      }
+
+      const payload: AuditPayload = {
+        contractSource,
+        contractName: contractName ?? report.contract_name ?? 'Contract',
+        report,
+        testCode,
+        simulationLogs,
+        patchedCode,
+        deploymentTx,
+        timestamp: Date.now(),
+      };
+
+      let zgResult: { rootHash: string; txHash: string } | null = null;
+      try {
+        zgResult = await uploadAuditData(payload);
+      } catch (e) {
+        console.warn('[audit/save] 0G upload failed, saving index anyway:', (e as Error).message);
+      }
+
+      const record = insertAudit({
+        walletAddress,
+        contractName: payload.contractName,
+        riskLevel: report.risk_level ?? 'low',
+        riskScore: report.risk_score ?? 0,
+        status: zgResult ? 'uploaded' : 'pending',
+        zgRootHash: zgResult?.rootHash ?? null,
+        zgTxHash: zgResult?.txHash ?? null,
+        createdAt: payload.timestamp,
+      });
+
+      savePayloadLocally(record.id, payload);
+
+      res.writeHead(200);
+      res.end(JSON.stringify({
+        id: record.id,
+        rootHash: record.zgRootHash,
+        txHash: record.zgTxHash,
+        status: record.status,
+      }));
+    } catch (e) {
+      res.writeHead(500);
+      res.end(JSON.stringify({ error: String((e as Error).message) }));
+    }
+    return;
+  }
+
+  if (req.method === 'GET' && path === '/audits') {
+    try {
+      const wallet = query.wallet;
+      const records = listAudits(wallet);
+      res.writeHead(200);
+      res.end(JSON.stringify({ audits: records }));
+    } catch (e) {
+      res.writeHead(500);
+      res.end(JSON.stringify({ error: String((e as Error).message) }));
+    }
+    return;
+  }
+
+  const auditMatch = path.match(/^\/audit\/([^/]+)$/);
+
+  if (req.method === 'DELETE' && auditMatch) {
+    try {
+      const id = auditMatch[1];
+      const deleted = deleteAudit(id);
+      if (!deleted) {
+        res.writeHead(404);
+        res.end(JSON.stringify({ error: 'Audit not found' }));
+        return;
+      }
+      res.writeHead(200);
+      res.end(JSON.stringify({ ok: true }));
+    } catch (e) {
+      res.writeHead(500);
+      res.end(JSON.stringify({ error: String((e as Error).message) }));
+    }
+    return;
+  }
+
+  const retryMatch = path.match(/^\/audit\/([^/]+)\/retry$/);
+  if (req.method === 'POST' && retryMatch) {
+    try {
+      const id = retryMatch[1];
+      const record = getAudit(id);
+      if (!record) {
+        res.writeHead(404);
+        res.end(JSON.stringify({ error: 'Audit not found' }));
+        return;
+      }
+      if (record.zgRootHash) {
+        res.writeHead(200);
+        res.end(JSON.stringify({ id, rootHash: record.zgRootHash, status: 'uploaded' }));
+        return;
+      }
+      const payload = loadPayloadLocally(id) as AuditPayload | null;
+      if (!payload) {
+        res.writeHead(400);
+        res.end(JSON.stringify({ error: 'No local payload to upload' }));
+        return;
+      }
+      const zgResult = await uploadAuditData(payload);
+      updateAudit(id, {
+        zgRootHash: zgResult.rootHash,
+        zgTxHash: zgResult.txHash,
+        status: 'uploaded',
+      });
+      res.writeHead(200);
+      res.end(JSON.stringify({ id, rootHash: zgResult.rootHash, txHash: zgResult.txHash, status: 'uploaded' }));
+    } catch (e) {
+      res.writeHead(500);
+      res.end(JSON.stringify({ error: String((e as Error).message) }));
+    }
+    return;
+  }
+
+  if (req.method === 'GET' && auditMatch) {
+    try {
+      const id = auditMatch[1];
+      const record = getAudit(id);
+      if (!record) {
+        res.writeHead(404);
+        res.end(JSON.stringify({ error: 'Audit not found' }));
+        return;
+      }
+
+      let payload: AuditPayload | null = null;
+
+      if (record.zgRootHash) {
+        try {
+          payload = await downloadAuditData(record.zgRootHash);
+        } catch (e) {
+          console.warn(`[audit/:id] 0G download failed, trying local cache:`, (e as Error).message);
+        }
+      }
+
+      if (!payload) {
+        payload = loadPayloadLocally(id) as AuditPayload | null;
+      }
+
+      res.writeHead(200);
+      res.end(JSON.stringify({ record, payload }));
+    } catch (e) {
+      res.writeHead(500);
+      res.end(JSON.stringify({ error: String((e as Error).message) }));
+    }
+    return;
+  }
+
   res.writeHead(404);
   res.end(JSON.stringify({ error: 'Not found' }));
 });
@@ -253,4 +429,8 @@ server.listen(PORT, () => {
   console.log(`  POST /generate-fix - Generate patched contract from analysis report`);
   console.log(`  POST /generate-patch - Generate patched contract from crash trace`);
   console.log(`  POST /compile - Compile contract to bytecode + ABI for deployment`);
+  console.log(`  POST /audit/save - Save audit to 0G Storage + local index`);
+  console.log(`  GET  /audits?wallet=0x... - List audit history`);
+  console.log(`  GET  /audit/:id - Fetch full audit from 0G Storage`);
+  console.log(`[agent] 0G Storage: ${is0GStorageAvailable() ? 'configured' : 'not configured (set PRIVATE_KEY_DEPLOYER)'}`);
 });

@@ -6,6 +6,16 @@ import { SiweMessage } from 'siwe'
 import { ConnectButton } from '@rainbow-me/rainbowkit'
 import { WalletReadyContext } from '@/app/providers'
 
+const SIWE_DONE_KEY = 'prophet-siwe-done'
+
+function getSiweDone(): string | null {
+  try { return sessionStorage.getItem(SIWE_DONE_KEY) } catch { return null }
+}
+
+function setSiweDone(address: string) {
+  try { sessionStorage.setItem(SIWE_DONE_KEY, address.toLowerCase()) } catch { /* noop */ }
+}
+
 function createSiweMessage(address: string, statement: string, nonce: string, chainId: number): string {
   const origin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:3000'
   const msg = new SiweMessage({
@@ -27,51 +37,57 @@ function WalletConnectInner(): JSX.Element {
   const { isConnected, address } = useAccount()
   const chainId = useChainId()
   const { signMessageAsync } = useSignMessage()
+  const signRef = useRef(signMessageAsync)
+  signRef.current = signMessageAsync
   const inFlight = useRef(false)
-  const lastSignedFor = useRef<string | null>(null)
 
   useEffect(() => {
-    const autoSignIn = async () => {
-      if (!isConnected || !address) return
-      if (inFlight.current) return
-      if (lastSignedFor.current === address.toLowerCase()) return
+    if (!isConnected || !address) return
+    if (inFlight.current) return
+
+    const addrLower = address.toLowerCase()
+    if (getSiweDone() === addrLower) return
+
+    let cancelled = false
+    inFlight.current = true
+
+    ;(async () => {
       try {
-        inFlight.current = true
         const me = await fetch('/api/auth/me', { cache: 'no-store', credentials: 'include' })
-        if (!me.ok) {
-          inFlight.current = false
-          return
+        if (me.ok) {
+          const data = await me.json().catch(() => ({ user: null }))
+          if (data?.user?.address?.toLowerCase() === addrLower) {
+            setSiweDone(addrLower)
+            return
+          }
         }
-        const data = await me.json().catch(() => ({ user: null }))
-        const user = data?.user
-        if (user && user.address?.toLowerCase() === address.toLowerCase()) {
-          lastSignedFor.current = address.toLowerCase()
-          return
-        }
+
+        if (cancelled) return
+
+        setSiweDone(addrLower)
+
         const nonceRes = await fetch('/api/auth/siwe/nonce', { method: 'GET', credentials: 'include' })
-        if (!nonceRes.ok) {
-          inFlight.current = false
-          return
-        }
+        if (!nonceRes.ok) return
+
         const { nonce } = (await nonceRes.json()) as { nonce: string }
         const message = createSiweMessage(address, 'Sign in to Prophet', nonce, chainId)
-        const signature = await signMessageAsync({ message })
-        const verifyRes = await fetch('/api/auth/siwe/verify', {
+        const signature = await signRef.current({ message })
+        await fetch('/api/auth/siwe/verify', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ message, signature }),
           credentials: 'include',
         })
-        if (!verifyRes.ok) return
-        lastSignedFor.current = address.toLowerCase()
       } catch {
-        // ignore
+        // user rejected or network error — already marked done, won't retry
       } finally {
         inFlight.current = false
       }
-    }
-    void autoSignIn()
-  }, [isConnected, address, chainId, signMessageAsync])
+    })()
+
+    return () => { cancelled = true }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isConnected, address])
 
   return (
     <ConnectButton.Custom>

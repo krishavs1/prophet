@@ -139,22 +139,33 @@ async function* runCommand(
 // ---------------------------------------------------------------------------
 
 /**
- * Determine the .sol filename for the source contract by inspecting the
- * source code's own `contract Foo` declaration, then falling back to
- * whatever the test code imports from ../src/.
+ * Determine the .sol filename for the source contract.
+ * Prefer contractName (from the analyzer) when it matches a contract in the
+ * source, so the file is named after the primary target rather than whatever
+ * helper happens to be declared first.
  */
 function resolveSourceFilename(
   source: string,
   testCode: string,
   contractName: string
 ): string {
-  const srcMatch = source.match(/\bcontract\s+(\w+)/);
-  if (srcMatch) return `${srcMatch[1]}.sol`;
+  const allContracts = [...source.matchAll(/\bcontract\s+(\w+)/g)].map((m) => m[1]);
+
+  if (contractName && allContracts.includes(contractName)) {
+    return `${contractName}.sol`;
+  }
+
+  if (allContracts.length > 0) return `${allContracts[0]}.sol`;
 
   const testImport = testCode.match(/["']\.\.\/src\/([^"']+\.sol)["']/);
   if (testImport) return testImport[1];
 
   return `${contractName}.sol`;
+}
+
+/** Extract all contract / interface / library names defined in Solidity source. */
+function allDefinedNames(code: string): string[] {
+  return [...code.matchAll(/\b(?:contract|interface|library)\s+(\w+)/g)].map((m) => m[1]);
 }
 
 /** Collect every `../src/X.sol` filename imported by the code. */
@@ -260,16 +271,27 @@ function writeTempProject(
 
   // --- source file ---
   const contractFile = resolveSourceFilename(source, testCode, contractName);
-  // Strip ../src/ imports from the source: they reference other src/ files
-  // we don't have as separate files.  If the referenced contract is defined
-  // in this same source, the import is redundant.  Rewriting to ./ would
-  // create circular proxy deps, so just remove them.
   const cleanedSource = source.replace(
     /import\s+["']\.\.\/src\/[^"']+\.sol["']\s*;\s*\n?/g,
     ''
   );
   fs.writeFileSync(path.join(srcDir, contractFile), cleanedSource);
   console.log(`[writeTempProject] source → src/${contractFile}`);
+
+  // Create forwarding files so any import "../src/OtherName.sol" resolves
+  // when OtherName is a contract/interface/library defined inside the source.
+  const primaryBase = contractFile.replace(/\.sol$/, '');
+  for (const name of allDefinedNames(source)) {
+    if (name === primaryBase) continue;
+    const fwdPath = path.join(srcDir, `${name}.sol`);
+    if (!fs.existsSync(fwdPath)) {
+      fs.writeFileSync(
+        fwdPath,
+        `// SPDX-License-Identifier: MIT\npragma solidity ^0.8.28;\nimport "./${contractFile}";\n`
+      );
+      console.log(`[writeTempProject] forwarding src/${name}.sol → ${contractFile}`);
+    }
+  }
 
   // --- test file ---
   // Step 1: strip ALL ../src/ imports (they may point to wrong files or
@@ -469,12 +491,12 @@ async function* runDockerFoundry(
       const fixedContracts = new Set(
         [...processed.matchAll(/\bcontract\s+(\w+)/g)].map((m) => m[1])
       );
-      const contractFile = resolveSourceFilename(source, '', contractName);
+      const cFile = resolveSourceFilename(source, '', contractName);
       if (![...srcContracts].some((c) => fixedContracts.has(c))) {
         const pe = processed.indexOf(';');
         if (pe !== -1) {
           processed = processed.slice(0, pe + 1) +
-            `\nimport "../src/${contractFile}";\n` +
+            `\nimport "../src/${cFile}";\n` +
             processed.slice(pe + 1);
         }
       }
@@ -482,6 +504,21 @@ async function* runDockerFoundry(
       processed = ensureForgeStdTestImport(processed);
       processed = balanceBraces(processed);
       fs.writeFileSync(testPath, processed);
+
+      // Regenerate forwarding files for any new contract names the test references
+      const srcDir = path.join(tmpDir, 'src');
+      const primaryBase = cFile.replace(/\.sol$/, '');
+      for (const name of allDefinedNames(source)) {
+        if (name === primaryBase) continue;
+        const fwdPath = path.join(srcDir, `${name}.sol`);
+        if (!fs.existsSync(fwdPath)) {
+          fs.writeFileSync(
+            fwdPath,
+            `// SPDX-License-Identifier: MIT\npragma solidity ^0.8.28;\nimport "./${cFile}";\n`
+          );
+        }
+      }
+
       console.log(`[runDockerFoundry] rewrote test after AI fix (attempt ${attempt + 1})`);
       continue;
     }

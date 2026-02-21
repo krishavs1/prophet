@@ -89,6 +89,27 @@ function runCommand(
 }
 
 /**
+ * Walk the out/ directory and find all *.json artifacts (skipping build-info).
+ * Returns an array of { contractName, filePath }.
+ */
+function findArtifacts(outDir: string): Array<{ contractName: string; filePath: string }> {
+  const results: Array<{ contractName: string; filePath: string }> = [];
+  if (!fs.existsSync(outDir)) return results;
+  for (const solDir of fs.readdirSync(outDir)) {
+    if (solDir === 'build-info') continue;
+    const full = path.join(outDir, solDir);
+    if (!fs.statSync(full).isDirectory()) continue;
+    for (const jsonFile of fs.readdirSync(full).filter((f) => f.endsWith('.json'))) {
+      results.push({
+        contractName: jsonFile.replace(/\.json$/, ''),
+        filePath: path.join(full, jsonFile),
+      });
+    }
+  }
+  return results;
+}
+
+/**
  * Compile a single Solidity source to bytecode and ABI.
  * Writes a temp Foundry project, runs forge build in Docker, reads the artifact.
  */
@@ -96,7 +117,6 @@ export async function compileSource(
   source: string,
   contractNameOverride?: string
 ): Promise<CompileResult> {
-  const contractName = contractNameOverride ?? getContractName(source);
   const tmpDir = path.join(
     os.tmpdir(),
     `prophet-compile-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -122,23 +142,25 @@ export async function compileSource(
       throw new Error(`Compilation failed:\n${output.slice(-2000)}`);
     }
 
-    // Foundry artifact: out/ContractName.sol/ContractName.json (or ContractName.sol/ContractName.json)
-    const solDir = path.join(tmpDir, 'out', `${contractName}.sol`);
-    const artifactPath = path.join(solDir, `${contractName}.json`);
-    let artifactJsonPath = artifactPath;
-    if (!fs.existsSync(artifactJsonPath)) {
-      const alt = path.join(tmpDir, 'out', filename.replace('.sol', ''), `${contractName}.json`);
-      if (fs.existsSync(alt)) artifactJsonPath = alt;
-      else if (fs.existsSync(solDir)) {
-        const files = fs.readdirSync(solDir).filter((f) => f.endsWith('.json'));
-        if (files.length > 0) artifactJsonPath = path.join(solDir, files[0]);
-      }
-    }
-    if (!fs.existsSync(artifactJsonPath)) {
-      throw new Error(`Artifact not found. Build output:\n${output.slice(-500)}`);
+    const outDir = path.join(tmpDir, 'out');
+    const artifacts = findArtifacts(outDir);
+    console.log(`[compile] Found ${artifacts.length} artifacts: ${artifacts.map((a) => a.contractName).join(', ')}`);
+
+    if (artifacts.length === 0) {
+      throw new Error(`No artifacts found after build. Output:\n${output.slice(-500)}`);
     }
 
-    const artifact = JSON.parse(fs.readFileSync(artifactJsonPath, 'utf-8'));
+    // Try to match: exact override name, then actual source contract name, then first non-Test artifact
+    const preferredName = contractNameOverride ?? getContractName(source);
+    let chosen =
+      artifacts.find((a) => a.contractName === preferredName) ??
+      artifacts.find((a) => a.contractName === getContractName(source)) ??
+      artifacts.find((a) => !a.contractName.endsWith('Test') && a.contractName !== 'Script') ??
+      artifacts[0];
+
+    console.log(`[compile] Using artifact: ${chosen.contractName} (requested: ${preferredName})`);
+
+    const artifact = JSON.parse(fs.readFileSync(chosen.filePath, 'utf-8'));
     const bytecode =
       typeof artifact.bytecode?.object === 'string'
         ? artifact.bytecode.object
@@ -152,7 +174,7 @@ export async function compileSource(
     }
 
     const hex = bytecode.startsWith('0x') ? bytecode : `0x${bytecode}`;
-    return { bytecode: hex, abi, contractName };
+    return { bytecode: hex, abi, contractName: chosen.contractName };
   } finally {
     try {
       fs.rmSync(tmpDir, { recursive: true, force: true });

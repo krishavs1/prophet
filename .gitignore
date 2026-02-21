@@ -17,6 +17,9 @@ out/
 .env
 .env*.local
 
+# Runtime data
+.prophet-data/
+
 # IDE / OS
 .DS_Store
 *.log

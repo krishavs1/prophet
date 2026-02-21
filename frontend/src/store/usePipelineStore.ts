@@ -87,6 +87,10 @@ interface PipelineState {
   // Last analysis was run with premium (fine-tuned / extra compute) tier
   analyzedWithPremium: boolean
 
+  // 0G Storage: last saved audit info
+  lastSavedAuditId: string | null
+  lastSavedRootHash: string | null
+
   // Actions
   setCode: (code: string, fileName?: string) => void
   setPatchedCode: (code: string) => void
@@ -112,6 +116,25 @@ interface PipelineState {
   setGeneratedTestCode: (code: string | null) => void
   setManualTestCode: (code: string | null) => void
   setShowFixesView: (show: boolean) => void
+  resetPipeline: () => void
+  setLastSavedAudit: (id: string | null, rootHash: string | null) => void
+  loadFromAudit: (data: {
+    contractSource: string
+    contractName: string
+    report: {
+      vulnerabilities: Vulnerability[]
+      exploitPaths: ExploitPath[]
+      fixSuggestions: FixSuggestion[]
+      riskScore: number
+      riskLevel: "critical" | "high" | "medium" | "low"
+      summary: string
+    }
+    testCode?: string
+    simulationLogs?: Array<{ text: string; type: string; timestamp: number }>
+    patchedCode?: string
+    auditId?: string | null
+    rootHash?: string | null
+  }) => void
 }
 
 export const usePipelineStore = create<PipelineState>((set) => ({
@@ -136,6 +159,8 @@ export const usePipelineStore = create<PipelineState>((set) => ({
   analyzedContractName: null,
   showFixesView: false,
   analyzedWithPremium: false,
+  lastSavedAuditId: null,
+  lastSavedRootHash: null,
 
   // Actions
   setCode: (code: string, fileName = "contract.sol") =>
@@ -198,4 +223,55 @@ export const usePipelineStore = create<PipelineState>((set) => ({
   setGeneratedTestCode: (code) => set({ generatedTestCode: code }),
   setManualTestCode: (code) => set({ manualTestCode: code }),
   setShowFixesView: (show) => set({ showFixesView: show }),
+  resetPipeline: () =>
+    set({
+      currentStep: 1,
+      isScanning: false,
+      isFuzzing: false,
+      originalCode: "",
+      patchedCode: null,
+      contractFileName: "contract.sol",
+      vulnerabilities: [],
+      exploitPaths: [],
+      fixSuggestions: [],
+      riskScore: null,
+      riskLevel: null,
+      summary: null,
+      terminalLogs: [],
+      isTerminalLive: false,
+      generatedTestCode: null,
+      manualTestCode: null,
+      simulationCode: null,
+      analyzedContractName: null,
+      showFixesView: false,
+      analyzedWithPremium: false,
+      lastSavedAuditId: null,
+      lastSavedRootHash: null,
+    }),
+  setLastSavedAudit: (id, rootHash) => set({ lastSavedAuditId: id, lastSavedRootHash: rootHash }),
+  loadFromAudit: (data) =>
+    set({
+      originalCode: data.contractSource,
+      contractFileName: `${data.contractName}.sol`,
+      vulnerabilities: data.report.vulnerabilities,
+      exploitPaths: data.report.exploitPaths,
+      fixSuggestions: data.report.fixSuggestions,
+      riskScore: data.report.riskScore,
+      riskLevel: data.report.riskLevel,
+      summary: data.report.summary,
+      analyzedContractName: data.contractName,
+      generatedTestCode: data.testCode ?? null,
+      patchedCode: data.patchedCode ?? null,
+      terminalLogs: (data.simulationLogs ?? []).map((l) => ({
+        text: l.text,
+        type: l.type as TerminalLog["type"],
+        timestamp: l.timestamp,
+      })),
+      currentStep: data.patchedCode ? 4 : data.report.vulnerabilities.length > 0 ? 3 : 2,
+      isScanning: false,
+      isFuzzing: false,
+      showFixesView: false,
+      lastSavedAuditId: data.auditId ?? null,
+      lastSavedRootHash: data.rootHash ?? null,
+    }),
 }))
